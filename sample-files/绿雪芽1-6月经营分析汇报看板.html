@@ -1,0 +1,692 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>绿雪芽项目 1-6月经营分析汇报看板</title>
+  <style>
+    :root {
+      --ink: #16232a;
+      --muted: #65747c;
+      --line: #dbe4e7;
+      --panel: #ffffff;
+      --wash: #f5f7f4;
+      --teal: #0f6674;
+      --teal-2: #3d8e88;
+      --gold: #c28a2c;
+      --coral: #ca5f38;
+      --green: #317a55;
+      --red: #b9473d;
+      --shadow: 0 18px 45px rgba(20, 37, 42, 0.11);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+      background: #eef3f1;
+      letter-spacing: 0;
+    }
+
+    .page {
+      min-height: 100vh;
+      padding: 28px;
+      background:
+        linear-gradient(180deg, rgba(15, 102, 116, 0.10), rgba(238, 243, 241, 0) 340px),
+        #eef3f1;
+    }
+
+    .shell {
+      max-width: 1540px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 18px;
+      align-items: end;
+      margin-bottom: 18px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(28px, 3.2vw, 48px);
+      line-height: 1.08;
+      font-weight: 800;
+      color: #102b32;
+    }
+
+    .subtitle {
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.6;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid rgba(15, 102, 116, 0.25);
+      background: #ffffff;
+      color: var(--teal);
+      height: 38px;
+      padding: 0 14px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 8px 22px rgba(15, 102, 116, 0.09);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .kpi {
+      background: var(--panel);
+      border: 1px solid rgba(15, 102, 116, 0.12);
+      border-radius: 8px;
+      padding: 16px 16px 14px;
+      box-shadow: var(--shadow);
+      min-height: 124px;
+    }
+
+    .kpi .label {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+      margin-bottom: 10px;
+    }
+
+    .kpi .value {
+      font-size: clamp(25px, 2.3vw, 36px);
+      font-weight: 800;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .kpi .note {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 12px;
+      line-height: 1.45;
+    }
+
+    .negative { color: var(--red); }
+    .positive { color: var(--green); }
+    .neutral { color: var(--teal); }
+    .warn { color: var(--gold); }
+
+    .brief {
+      background: #12343c;
+      color: #ffffff;
+      border-radius: 8px;
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      min-height: 262px;
+      display: grid;
+      align-content: space-between;
+      gap: 18px;
+    }
+
+    .brief h2 {
+      margin: 0 0 8px;
+      font-size: 20px;
+    }
+
+    .brief p {
+      margin: 0;
+      color: rgba(255, 255, 255, 0.82);
+      line-height: 1.75;
+      font-size: 15px;
+    }
+
+    .signal-row {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .signal {
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 8px;
+      padding: 12px;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .signal strong {
+      display: block;
+      font-size: 22px;
+      margin-bottom: 4px;
+    }
+
+    .signal span {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 12px;
+    }
+
+    .section {
+      margin-top: 18px;
+      background: var(--panel);
+      border: 1px solid rgba(15, 102, 116, 0.12);
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 16px 18px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcfb;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 20px;
+      line-height: 1.2;
+    }
+
+    .section-head .meta {
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1.08fr 0.92fr;
+      gap: 0;
+    }
+
+    .chart-box {
+      padding: 16px 18px 18px;
+      min-height: 360px;
+    }
+
+    .chart-box + .chart-box {
+      border-left: 1px solid var(--line);
+    }
+
+    .chart-title {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      color: #24343a;
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 5px;
+      vertical-align: -1px;
+    }
+
+    svg {
+      display: block;
+      width: 100%;
+      height: auto;
+      overflow: visible;
+    }
+
+    .matrix {
+      display: grid;
+      grid-template-columns: 1fr 0.86fr;
+      gap: 0;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th {
+      background: #174a5c;
+      color: white;
+      text-align: right;
+      padding: 10px 9px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    th:first-child,
+    td:first-child { text-align: left; }
+
+    td {
+      padding: 9px;
+      border-bottom: 1px solid var(--line);
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    tr:nth-child(even) td {
+      background: #f8faf9;
+    }
+
+    .name {
+      max-width: 230px;
+      white-space: normal;
+      line-height: 1.32;
+      font-weight: 700;
+    }
+
+    .action-panel {
+      border-left: 1px solid var(--line);
+      padding: 16px 18px;
+      background: #fbfcfb;
+    }
+
+    .action {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .action:last-child { border-bottom: 0; }
+    .action h3 {
+      margin: 0 0 7px;
+      font-size: 15px;
+      color: #1e3f48;
+    }
+    .action p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .cost-grid {
+      display: grid;
+      grid-template-columns: 1fr 0.78fr;
+      gap: 0;
+    }
+
+    .cost-list {
+      padding: 18px;
+    }
+
+    .cost-row {
+      display: grid;
+      grid-template-columns: 120px minmax(0, 1fr) 82px 70px;
+      gap: 12px;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+
+    .bar-track {
+      height: 12px;
+      background: #e9efed;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--teal), var(--gold));
+    }
+
+    .diagnosis {
+      padding: 18px;
+      border-left: 1px solid var(--line);
+      background: #f8faf9;
+    }
+
+    .diagnosis h3 {
+      margin: 0 0 12px;
+      font-size: 18px;
+      color: #1e3f48;
+    }
+
+    .diagnosis ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #38484f;
+      line-height: 1.75;
+      font-size: 14px;
+    }
+
+    .footer {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: right;
+    }
+
+    @media (max-width: 1100px) {
+      .hero,
+      .chart-grid,
+      .matrix,
+      .cost-grid {
+        grid-template-columns: 1fr;
+      }
+      .chart-box + .chart-box,
+      .action-panel,
+      .diagnosis {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+      }
+      .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      header { grid-template-columns: 1fr; }
+      .toolbar { justify-content: flex-start; }
+    }
+
+    @media print {
+      body { background: #ffffff; }
+      .page { padding: 0; background: #ffffff; }
+      button { display: none; }
+      .section, .kpi, .brief { box-shadow: none; break-inside: avoid; }
+      .shell { max-width: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <div class="shell">
+      <header>
+        <div>
+          <h1>绿雪芽项目 1-6月经营分析汇报看板</h1>
+          <div class="subtitle">金额单位：万元；核心关注利润中心盈利结构、进销差毛利率、投放费比、人费比和经营趋势。</div>
+        </div>
+        <div class="toolbar">
+          <button type="button" onclick="window.print()">打印 / 导出 PDF</button>
+        </div>
+      </header>
+
+      <section class="hero">
+        <div class="kpi-grid" id="kpis"></div>
+        <aside class="brief">
+          <div>
+            <h2>管理层一句话</h2>
+            <p>绿雪芽 H1 货品毛利池并不弱，整体进销差毛利率 61.6%；亏损的主因是投放、促销直播和人员费用把毛利吃掉。要优先处理抖音、京东自营、天猫三大规模渠道的费用效率。</p>
+          </div>
+          <div class="signal-row">
+            <div class="signal"><strong>-104.67</strong><span>项目利润</span></div>
+            <div class="signal"><strong>23.9%</strong><span>投放费比</span></div>
+            <div class="signal"><strong>18.4%</strong><span>人费比</span></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>经营趋势与渠道结构</h2>
+          <div class="meta">1-6月连续口径</div>
+        </div>
+        <div class="chart-grid">
+          <div class="chart-box">
+            <div class="chart-title">
+              <span>月度销售出库、进销差与项目利润</span>
+              <span class="legend">
+                <span><i class="dot" style="background: var(--teal);"></i>销售出库</span>
+                <span><i class="dot" style="background: var(--gold);"></i>进销差</span>
+                <span><i class="dot" style="background: var(--red);"></i>项目利润</span>
+              </span>
+            </div>
+            <div id="trendChart"></div>
+          </div>
+          <div class="chart-box">
+            <div class="chart-title">
+              <span>渠道销售规模与利润贡献</span>
+              <span class="legend">
+                <span><i class="dot" style="background: var(--teal);"></i>销售出库</span>
+                <span><i class="dot" style="background: var(--coral);"></i>项目利润</span>
+              </span>
+            </div>
+            <div id="channelChart"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>利润中心盈利结构</h2>
+          <div class="meta">按销售出库规模排序</div>
+        </div>
+        <div class="matrix">
+          <div>
+            <table>
+              <thead>
+                <tr>
+                  <th>利润中心</th>
+                  <th>销售出库</th>
+                  <th>进销差率</th>
+                  <th>投放费比</th>
+                  <th>人费比</th>
+                  <th>项目利润</th>
+                  <th>利润率</th>
+                </tr>
+              </thead>
+              <tbody id="channelTable"></tbody>
+            </table>
+          </div>
+          <aside class="action-panel">
+            <div class="action">
+              <h3>抖音旗舰店：亏损最大</h3>
+              <p>销售出库 254.91 万，项目利润 -43.27 万；进销差率高但投放费比 27.1%，销售费用吞噬毛利，需重估直播与投放 ROI。</p>
+            </div>
+            <div class="action">
+              <h3>京东自营：亏损率最高</h3>
+              <p>销售出库 154.72 万，项目利润率 -19.5%；投放费比 26.0%、人费比 23.8%，应复盘平台扣点、人员分摊和投放结构。</p>
+            </div>
+            <div class="action">
+              <h3>天猫旗舰店：规模第一但未盈利</h3>
+              <p>销售出库 297.59 万，项目利润 -20.95 万；规模优势存在，但投放和人力合计压力偏高，是扭亏第一优先级。</p>
+            </div>
+            <div class="action">
+              <h3>线下分销 / 京东POP：利润补充</h3>
+              <p>线下分销利润率 39.0%，京东POP 利润率 26.9%；两者证明低费率渠道可以盈利，但需要解决规模不足。</p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="section-head">
+          <h2>费用压力拆解</h2>
+          <div class="meta">占销售出库比重</div>
+        </div>
+        <div class="cost-grid">
+          <div class="cost-list" id="costList"></div>
+          <aside class="diagnosis">
+            <h3>经营抓手</h3>
+            <ol>
+              <li>建立渠道投放红线：抖音、京东POP、京东自营均超过 26%，先压测边际 ROI。</li>
+              <li>把人力费用按渠道产出重分摊：天猫和京东自营的人费压力最明显。</li>
+              <li>促销推广费和直播推广费合计接近 150 万，是除投放外的第二费用池。</li>
+              <li>5-6月亏损明显收窄，应复盘改善来自销售恢复、费比下降还是一次性费用减少。</li>
+            </ol>
+          </aside>
+        </div>
+      </section>
+
+      <div class="footer">数据源：D:\326\大健康\绿雪芽1-6月管报V2.xlsx；生成口径：金额/10000，费率以销售出库为分母。</div>
+    </div>
+  </main>
+
+  <script>
+    const data = {
+      summary: {
+        sales: 760.5633, spread: 468.1652, spreadRate: 0.61555,
+        ad: 181.4670, adRate: 0.23860, people: 140.0850,
+        peopleRate: 0.18419, profit: -104.6660, profitRate: -0.13762,
+        salesExpense: 554.8527
+      },
+      months: [
+        { m: "1月", sales: 133.7368, spread: 81.5848, adRate: 0.2695, peopleRate: 0.1588, profit: -14.6627 },
+        { m: "2月", sales: 139.5564, spread: 83.5512, adRate: 0.2387, peopleRate: 0.1572, profit: -20.3825 },
+        { m: "3月", sales: 109.4684, spread: 68.4660, adRate: 0.2653, peopleRate: 0.2057, profit: -34.1671 },
+        { m: "4月", sales: 83.4499, spread: 53.6852, adRate: 0.2453, peopleRate: 0.2900, profit: -27.7828 },
+        { m: "5月", sales: 148.8506, spread: 90.3261, adRate: 0.1972, peopleRate: 0.1757, profit: -2.3178 },
+        { m: "6月", sales: 145.5012, spread: 90.5519, adRate: 0.2285, peopleRate: 0.1651, profit: -5.3532 }
+      ],
+      channels: [
+        { name: "佰茶绿雪芽天猫旗舰店", sales: 297.5903, spreadRate: 0.6110, ad: 65.8287, adRate: 0.2212, peopleRate: 0.2160, profit: -20.9496, profitRate: -0.0704 },
+        { name: "佰茶绿雪芽抖音旗舰店", sales: 254.9111, spreadRate: 0.6316, ad: 69.1661, adRate: 0.2713, peopleRate: 0.1041, profit: -43.2663, profitRate: -0.1697 },
+        { name: "璞睿绿雪芽京东自营店", sales: 154.7220, spreadRate: 0.6353, ad: 40.2925, adRate: 0.2604, peopleRate: 0.2383, profit: -30.2185, profitRate: -0.1953 },
+        { name: "佰茶绿雪芽线下分销", sales: 29.8316, spreadRate: 0.4162, ad: 0, adRate: 0, peopleRate: 0, profit: 11.6409, profitRate: 0.3902 },
+        { name: "佰茶绿雪芽京东POP旗舰店", sales: 22.4094, spreadRate: 0.6166, ad: 6.1796, adRate: 0.2758, peopleRate: 0, profit: 6.0270, profitRate: 0.2689 },
+        { name: "佰茶绿雪芽微信小店", sales: 0.6991, spreadRate: 0.7137, ad: 0, adRate: 0, peopleRate: 0, profit: 0.4513, profitRate: 0.6455 },
+        { name: "佰茶绿雪芽小红书旗舰店", sales: 0.3998, spreadRate: 0.7657, ad: 0, adRate: 0, peopleRate: 0, profit: -2.3867, profitRate: -5.9693 },
+        { name: "佰茶绿雪芽京东自营店", sales: 0, spreadRate: 0, ad: 0, adRate: 0, peopleRate: 0, profit: -15.7090, profitRate: 0 },
+        { name: "佰茶绿雪芽本地生活分销", sales: 0, spreadRate: 0, ad: 0, adRate: 0, peopleRate: 0, profit: -10.1887, profitRate: 0 },
+        { name: "佰茶绿雪芽唯品会JIT店", sales: 0, spreadRate: 0, ad: 0, adRate: 0, peopleRate: 0, profit: -0.0665, profitRate: 0 },
+        { name: "佰茶绿雪芽唯品会JITX店", sales: 0, spreadRate: 0, ad: 0, adRate: 0, peopleRate: 0, profit: 0, profitRate: 0 },
+        { name: "佰茶绿雪芽新零售视频号店", sales: 0, spreadRate: 0, ad: 0, adRate: 0, peopleRate: 0, profit: 0, profitRate: 0 }
+      ],
+      costs: [
+        { name: "投放费用", amount: 181.4670, ratio: 0.2386 },
+        { name: "直播推广费", amount: 75.2389, ratio: 0.0989 },
+        { name: "促销推广费", amount: 74.8426, ratio: 0.0984 },
+        { name: "运营人员小计", amount: 82.8935, ratio: 0.1090 },
+        { name: "中台人员小计", amount: 57.1914, ratio: 0.0752 },
+        { name: "仓储物流小计", amount: 55.7154, ratio: 0.0733 },
+        { name: "营销设计费", amount: 12.4356, ratio: 0.0164 },
+        { name: "扣点佣金", amount: 12.0483, ratio: 0.0158 },
+        { name: "管理费用合计", amount: 5.6604, ratio: 0.0074 },
+        { name: "其他费用", amount: 3.0186, ratio: 0.0040 }
+      ]
+    };
+
+    const fmt = (n, d = 2) => Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
+    const pct = (n) => `${(n * 100).toFixed(1)}%`;
+    const shortName = (name) => name.replace("佰茶绿雪芽", "").replace("璞睿绿雪芽", "").replace("旗舰店", "").replace("店", "");
+
+    function renderKpis() {
+      const items = [
+        ["销售出库", data.summary.sales, "万元", "5-6月恢复至 145万+ 区间", "neutral"],
+        ["进销差毛利率", data.summary.spreadRate, "", "毛利池充足，不是首要短板", "positive", true],
+        ["投放费比", data.summary.adRate, "", "投放是最大可调投入之一", "warn", true],
+        ["项目利润", data.summary.profit, "万元", "H1 仍亏损，需按渠道归因", "negative"]
+      ];
+      document.getElementById("kpis").innerHTML = items.map(([label, value, unit, note, cls, isRate]) => `
+        <div class="kpi">
+          <div class="label">${label}</div>
+          <div class="value ${cls}">${isRate ? pct(value) : fmt(value)}${unit ? `<span style="font-size:14px;font-weight:700;margin-left:4px;">${unit}</span>` : ""}</div>
+          <div class="note">${note}</div>
+        </div>
+      `).join("");
+    }
+
+    function lineChart(target, series) {
+      const w = 760, h = 300, pad = { l: 52, r: 18, t: 24, b: 42 };
+      const all = series.flatMap(s => s.values);
+      const min = Math.min(-45, ...all), max = Math.max(155, ...all);
+      const x = i => pad.l + i * ((w - pad.l - pad.r) / (data.months.length - 1));
+      const y = v => pad.t + (max - v) / (max - min) * (h - pad.t - pad.b);
+      const grid = [150, 100, 50, 0, -50].map(v => `
+        <line x1="${pad.l}" x2="${w - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="#d9e2e5" stroke-dasharray="4 4"/>
+        <text x="${pad.l - 10}" y="${y(v) + 4}" text-anchor="end" fill="#65747c" font-size="12">${v}</text>
+      `).join("");
+      const labels = data.months.map((m, i) => `
+        <text x="${x(i)}" y="${h - 14}" text-anchor="middle" fill="#65747c" font-size="12">${m.m}</text>
+      `).join("");
+      const paths = series.map(s => {
+        const d = s.values.map((v, i) => `${i ? "L" : "M"}${x(i)},${y(v)}`).join(" ");
+        const pts = s.values.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="3.4" fill="${s.color}"><title>${s.name} ${data.months[i].m}: ${fmt(v)}万</title></circle>`).join("");
+        return `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${pts}`;
+      }).join("");
+      target.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="月度趋势图">${grid}${paths}${labels}</svg>`;
+    }
+
+    function barChart(target) {
+      const visible = data.channels.slice(0, 6);
+      const w = 620, h = 300, pad = { l: 42, r: 18, t: 22, b: 68 };
+      const max = Math.max(...visible.map(d => d.sales), 300);
+      const min = Math.min(...visible.map(d => d.profit), -50);
+      const y0 = pad.t + (max - 0) / (max - min) * (h - pad.t - pad.b);
+      const step = (w - pad.l - pad.r) / visible.length;
+      const barW = Math.min(30, step * 0.26);
+      const y = v => pad.t + (max - v) / (max - min) * (h - pad.t - pad.b);
+      const grid = [300, 200, 100, 0, -50].map(v => `
+        <line x1="${pad.l}" x2="${w - pad.r}" y1="${y(v)}" y2="${y(v)}" stroke="#d9e2e5" stroke-dasharray="4 4"/>
+        <text x="${pad.l - 8}" y="${y(v) + 4}" text-anchor="end" fill="#65747c" font-size="12">${v}</text>
+      `).join("");
+      const bars = visible.map((d, i) => {
+        const cx = pad.l + i * step + step / 2;
+        const salesH = Math.abs(y(d.sales) - y0);
+        const profitH = Math.abs(y(d.profit) - y0);
+        const salesY = Math.min(y(d.sales), y0);
+        const profitY = Math.min(y(d.profit), y0);
+        return `
+          <rect x="${cx - barW - 3}" y="${salesY}" width="${barW}" height="${salesH}" fill="#0f6674" rx="3"><title>${d.name} 销售出库 ${fmt(d.sales)}万</title></rect>
+          <rect x="${cx + 3}" y="${profitY}" width="${barW}" height="${profitH}" fill="#ca5f38" rx="3"><title>${d.name} 项目利润 ${fmt(d.profit)}万</title></rect>
+          <text x="${cx}" y="${h - 42}" text-anchor="middle" fill="#65747c" font-size="12">${shortName(d.name).slice(0, 5)}</text>
+        `;
+      }).join("");
+      target.innerHTML = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="渠道销售和利润柱状图">${grid}<line x1="${pad.l}" x2="${w - pad.r}" y1="${y0}" y2="${y0}" stroke="#8ca0a6"/>${bars}</svg>`;
+    }
+
+    function renderTable() {
+      document.getElementById("channelTable").innerHTML = data.channels.map(d => `
+        <tr>
+          <td class="name">${d.name}</td>
+          <td>${fmt(d.sales)}</td>
+          <td>${pct(d.spreadRate)}</td>
+          <td class="${d.adRate > 0.24 ? "warn" : ""}">${pct(d.adRate)}</td>
+          <td class="${d.peopleRate > 0.2 ? "warn" : ""}">${pct(d.peopleRate)}</td>
+          <td class="${d.profit < 0 ? "negative" : "positive"}">${fmt(d.profit)}</td>
+          <td class="${d.profitRate < 0 ? "negative" : "positive"}">${d.sales === 0 ? "-" : pct(d.profitRate)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderCosts() {
+      const max = Math.max(...data.costs.map(d => d.amount));
+      document.getElementById("costList").innerHTML = data.costs.map(d => `
+        <div class="cost-row">
+          <strong>${d.name}</strong>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.max(2, d.amount / max * 100)}%"></div></div>
+          <span>${fmt(d.amount)}</span>
+          <span>${pct(d.ratio)}</span>
+        </div>
+      `).join("");
+    }
+
+    renderKpis();
+    lineChart(document.getElementById("trendChart"), [
+      { name: "销售出库", color: "#0f6674", values: data.months.map(d => d.sales) },
+      { name: "进销差", color: "#c28a2c", values: data.months.map(d => d.spread) },
+      { name: "项目利润", color: "#b9473d", values: data.months.map(d => d.profit) }
+    ]);
+    barChart(document.getElementById("channelChart"));
+    renderTable();
+    renderCosts();
+  </script>
+</body>
+</html>
