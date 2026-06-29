@@ -1,0 +1,553 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum RoleCode {
+  super_admin
+  owner
+  finance
+  operation
+  investor
+  readonly
+}
+
+enum ProjectCode {
+  taiyue
+  luxueya
+}
+
+enum UploadStatus {
+  pending
+  parsed
+  imported
+  failed
+}
+
+enum AlertSeverity {
+  red
+  orange
+  yellow
+  info
+}
+
+enum AlertStatus {
+  open
+  acknowledged
+  resolved
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String   @map("password_hash")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  roles       UserRole[]
+  permissions ProjectUserPermission[]
+  uploads     UploadBatch[]
+  auditLogs   AuditLog[]
+
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  code        RoleCode @unique
+  name        String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users UserRole[]
+
+  @@map("roles")
+}
+
+model UserRole {
+  userId String @map("user_id")
+  roleId String @map("role_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+model Project {
+  id          String      @id @default(cuid())
+  code        ProjectCode @unique
+  name        String
+  entityName  String      @map("entity_name")
+  description String?
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  permissions            ProjectUserPermission[]
+  uploadBatches          UploadBatch[]
+  sourceFiles            SourceFile[]
+  financeSnapshots       FinanceSnapshot[]
+  cashflowSnapshots      CashflowSnapshot[]
+  balanceSheetItems      BalanceSheetItem[]
+  profitItems            ProfitItem[]
+  receivablePayableItems ReceivablePayableItem[]
+  paymentTransactions    PaymentTransaction[]
+  managementReportRows   ManagementReportRow[]
+  salesDailyRows         SalesDailyRow[]
+  promotionDailyRows     PromotionDailyRow[]
+  inventorySnapshots     InventorySnapshot[]
+  inventorySkuRows       InventorySkuRow[]
+  purchaseRows           PurchaseRow[]
+  alertRules             AlertRule[]
+  alertEvents            AlertEvent[]
+
+  @@map("projects")
+}
+
+model ProjectUserPermission {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  projectId String   @map("project_id")
+  roleCode  RoleCode @map("role_code")
+  canUpload Boolean  @default(false) @map("can_upload")
+  canManage Boolean  @default(false) @map("can_manage")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId, roleCode])
+  @@map("project_user_permissions")
+}
+
+model UploadBatch {
+  id           String       @id @default(cuid())
+  projectId    String?      @map("project_id")
+  uploadedById String?      @map("uploaded_by_id")
+  status       UploadStatus @default(pending)
+  note         String?
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  project     Project?     @relation(fields: [projectId], references: [id])
+  uploadedBy  User?        @relation(fields: [uploadedById], references: [id])
+  sourceFiles SourceFile[]
+
+  @@map("upload_batches")
+}
+
+model SourceFile {
+  id            String   @id @default(cuid())
+  projectId     String?  @map("project_id")
+  uploadBatchId String   @map("upload_batch_id")
+  originalName  String   @map("original_name")
+  storagePath   String   @map("storage_path")
+  fileType      String   @map("file_type")
+  parserType    String?  @map("parser_type")
+  checksum      String?
+  version       Int      @default(1)
+  parseSummary  Json?    @map("parse_summary")
+  qualityIssues Json?    @map("quality_issues")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project     Project?    @relation(fields: [projectId], references: [id])
+  uploadBatch UploadBatch @relation(fields: [uploadBatchId], references: [id], onDelete: Cascade)
+
+  financeSnapshots       FinanceSnapshot[]
+  cashflowSnapshots      CashflowSnapshot[]
+  balanceSheetItems      BalanceSheetItem[]
+  profitItems            ProfitItem[]
+  receivablePayableItems ReceivablePayableItem[]
+  paymentTransactions    PaymentTransaction[]
+  managementReportRows   ManagementReportRow[]
+  salesDailyRows         SalesDailyRow[]
+  promotionDailyRows     PromotionDailyRow[]
+  inventorySnapshots     InventorySnapshot[]
+  inventorySkuRows       InventorySkuRow[]
+  purchaseRows           PurchaseRow[]
+
+  @@map("source_files")
+}
+
+model FinanceSnapshot {
+  id            String   @id @default(cuid())
+  projectId     String   @map("project_id")
+  reportMonth   DateTime @map("report_month") @db.Date
+  sourceFileId  String   @map("source_file_id")
+  uploadBatchId String   @map("upload_batch_id")
+  monetaryFunds Decimal? @map("monetary_funds") @db.Decimal(18, 2)
+  receivables   Decimal? @db.Decimal(18, 2)
+  prepayments   Decimal? @db.Decimal(18, 2)
+  payables      Decimal? @db.Decimal(18, 2)
+  revenue       Decimal? @db.Decimal(18, 2)
+  netProfit     Decimal? @map("net_profit") @db.Decimal(18, 2)
+  endingCash    Decimal? @map("ending_cash") @db.Decimal(18, 2)
+  rawMetrics    Json?    @map("raw_metrics")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth])
+  @@map("finance_snapshots")
+}
+
+model CashflowSnapshot {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportMonth       DateTime @map("report_month") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  operatingCashflow Decimal? @map("operating_cashflow") @db.Decimal(18, 2)
+  cashInflow        Decimal? @map("cash_inflow") @db.Decimal(18, 2)
+  cashOutflow       Decimal? @map("cash_outflow") @db.Decimal(18, 2)
+  endingCash        Decimal? @map("ending_cash") @db.Decimal(18, 2)
+  supportDays       Decimal? @map("support_days") @db.Decimal(12, 2)
+  rawMetrics        Json?    @map("raw_metrics")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth])
+  @@map("cashflow_snapshots")
+}
+
+model BalanceSheetItem {
+  id             String   @id @default(cuid())
+  projectId      String   @map("project_id")
+  reportMonth    DateTime @map("report_month") @db.Date
+  sourceFileId   String   @map("source_file_id")
+  uploadBatchId  String   @map("upload_batch_id")
+  category       String?
+  itemName       String   @map("item_name")
+  endingBalance  Decimal? @map("ending_balance") @db.Decimal(18, 2)
+  openingBalance Decimal? @map("opening_balance") @db.Decimal(18, 2)
+  side           String?
+  rawRow         Json?    @map("raw_row")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth, itemName])
+  @@map("balance_sheet_items")
+}
+
+model ProfitItem {
+  id            String   @id @default(cuid())
+  projectId     String   @map("project_id")
+  reportMonth   DateTime @map("report_month") @db.Date
+  sourceFileId  String   @map("source_file_id")
+  uploadBatchId String   @map("upload_batch_id")
+  itemName      String   @map("item_name")
+  amount        Decimal? @db.Decimal(18, 2)
+  monthLabel    String?  @map("month_label")
+  rawRow        Json?    @map("raw_row")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth, itemName])
+  @@map("profit_items")
+}
+
+model ReceivablePayableItem {
+  id            String    @id @default(cuid())
+  projectId     String    @map("project_id")
+  reportMonth   DateTime  @map("report_month") @db.Date
+  sourceFileId  String    @map("source_file_id")
+  uploadBatchId String    @map("upload_batch_id")
+  itemType      String    @map("item_type")
+  counterparty  String?
+  subjectCode   String?   @map("subject_code")
+  subjectName   String?   @map("subject_name")
+  endingAmount  Decimal?  @map("ending_amount") @db.Decimal(18, 2)
+  dueDate       DateTime? @map("due_date") @db.Date
+  rawRow        Json?     @map("raw_row")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth, itemType])
+  @@map("receivable_payable_items")
+}
+
+model PaymentTransaction {
+  id              String   @id @default(cuid())
+  projectId       String   @map("project_id")
+  reportDate      DateTime @map("report_date") @db.Date
+  sourceFileId    String   @map("source_file_id")
+  uploadBatchId   String   @map("upload_batch_id")
+  accountName     String?  @map("account_name")
+  transactionType String?  @map("transaction_type")
+  debitAmount     Decimal? @map("debit_amount") @db.Decimal(18, 2)
+  creditAmount    Decimal? @map("credit_amount") @db.Decimal(18, 2)
+  balance         Decimal? @db.Decimal(18, 2)
+  summary         String?
+  counterparty    String?
+  isSensitive     Boolean  @default(true) @map("is_sensitive")
+  rawRow          Json?    @map("raw_row")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate])
+  @@map("payment_transactions")
+}
+
+model ManagementReportRow {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportMonth       DateTime @map("report_month") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  company           String?
+  profitCenter      String?  @map("profit_center")
+  store             String?
+  channel           String?
+  gmv               Decimal? @db.Decimal(18, 2)
+  gsv               Decimal? @db.Decimal(18, 2)
+  refundRate        Decimal? @map("refund_rate") @db.Decimal(10, 4)
+  salesOutbound     Decimal? @map("sales_outbound") @db.Decimal(18, 2)
+  salesCost         Decimal? @map("sales_cost") @db.Decimal(18, 2)
+  purchaseSalesDiff Decimal? @map("purchase_sales_diff") @db.Decimal(18, 2)
+  adSpend           Decimal? @map("ad_spend") @db.Decimal(18, 2)
+  platformFees      Decimal? @map("platform_fees") @db.Decimal(18, 2)
+  promotionFees     Decimal? @map("promotion_fees") @db.Decimal(18, 2)
+  staffFees         Decimal? @map("staff_fees") @db.Decimal(18, 2)
+  projectProfit     Decimal? @map("project_profit") @db.Decimal(18, 2)
+  profitRate        Decimal? @map("profit_rate") @db.Decimal(10, 4)
+  rawRow            Json?    @map("raw_row")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportMonth, channel])
+  @@map("management_report_rows")
+}
+
+model SalesDailyRow {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportDate        DateTime @map("report_date") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  channel           String?
+  store             String?
+  productName       String?  @map("product_name")
+  sku               String?
+  paymentAmount     Decimal? @map("payment_amount") @db.Decimal(18, 2)
+  actualSales       Decimal? @map("actual_sales") @db.Decimal(18, 2)
+  gmvTarget         Decimal? @map("gmv_target") @db.Decimal(18, 2)
+  completionRate    Decimal? @map("completion_rate") @db.Decimal(10, 4)
+  paidUnits         Decimal? @map("paid_units") @db.Decimal(18, 2)
+  paidBuyers        Decimal? @map("paid_buyers") @db.Decimal(18, 2)
+  visitors          Decimal? @db.Decimal(18, 2)
+  pageViews         Decimal? @map("page_views") @db.Decimal(18, 2)
+  conversionRate    Decimal? @map("conversion_rate") @db.Decimal(10, 4)
+  averageOrderValue Decimal? @map("average_order_value") @db.Decimal(18, 2)
+  rawRow            Json?    @map("raw_row")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate, channel])
+  @@map("sales_daily_rows")
+}
+
+model PromotionDailyRow {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportDate        DateTime @map("report_date") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  channel           String?
+  campaign          String?
+  spend             Decimal? @db.Decimal(18, 2)
+  impressions       Decimal? @db.Decimal(18, 2)
+  clicks            Decimal? @db.Decimal(18, 2)
+  transactionAmount Decimal? @map("transaction_amount") @db.Decimal(18, 2)
+  roi               Decimal? @db.Decimal(12, 4)
+  cpc               Decimal? @db.Decimal(12, 4)
+  clickRate         Decimal? @map("click_rate") @db.Decimal(12, 4)
+  conversionRate    Decimal? @map("conversion_rate") @db.Decimal(12, 4)
+  cartCost          Decimal? @map("cart_cost") @db.Decimal(18, 2)
+  isValid           Boolean  @default(true) @map("is_valid")
+  qualityIssue      String?  @map("quality_issue")
+  rawRow            Json?    @map("raw_row")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate, channel])
+  @@map("promotion_daily_rows")
+}
+
+model InventorySnapshot {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportDate        DateTime @map("report_date") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  inventoryAmount   Decimal? @map("inventory_amount") @db.Decimal(18, 2)
+  inventoryQuantity Decimal? @map("inventory_quantity") @db.Decimal(18, 2)
+  sales7d           Decimal? @map("sales_7d") @db.Decimal(18, 2)
+  sales30d          Decimal? @map("sales_30d") @db.Decimal(18, 2)
+  turnoverDays      Decimal? @map("turnover_days") @db.Decimal(12, 2)
+  slowMovingAmount  Decimal? @map("slow_moving_amount") @db.Decimal(18, 2)
+  lowStockSkuCount  Int?     @map("low_stock_sku_count")
+  inTransitAmount   Decimal? @map("in_transit_amount") @db.Decimal(18, 2)
+  spotRate          Decimal? @map("spot_rate") @db.Decimal(10, 4)
+  rawMetrics        Json?    @map("raw_metrics")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate])
+  @@map("inventory_snapshots")
+}
+
+model InventorySkuRow {
+  id                String   @id @default(cuid())
+  projectId         String   @map("project_id")
+  reportDate        DateTime @map("report_date") @db.Date
+  sourceFileId      String   @map("source_file_id")
+  uploadBatchId     String   @map("upload_batch_id")
+  sku               String?
+  productName       String?  @map("product_name")
+  warehouse         String?
+  inventoryQuantity Decimal? @map("inventory_quantity") @db.Decimal(18, 2)
+  inventoryAmount   Decimal? @map("inventory_amount") @db.Decimal(18, 2)
+  sales7d           Decimal? @map("sales_7d") @db.Decimal(18, 2)
+  sales30d          Decimal? @map("sales_30d") @db.Decimal(18, 2)
+  turnoverDays      Decimal? @map("turnover_days") @db.Decimal(12, 2)
+  inTransit         Decimal? @map("in_transit") @db.Decimal(18, 2)
+  isDefective       Boolean  @default(false) @map("is_defective")
+  rawRow            Json?    @map("raw_row")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate, sku])
+  @@map("inventory_sku_rows")
+}
+
+model PurchaseRow {
+  id                   String   @id @default(cuid())
+  projectId            String   @map("project_id")
+  reportDate           DateTime @map("report_date") @db.Date
+  sourceFileId         String   @map("source_file_id")
+  uploadBatchId        String   @map("upload_batch_id")
+  purchaseOa           String?  @map("purchase_oa")
+  sapCode              String?  @map("sap_code")
+  materialName         String?  @map("material_name")
+  unitPrice            Decimal? @map("unit_price") @db.Decimal(18, 4)
+  purchaseQuantity     Decimal? @map("purchase_quantity") @db.Decimal(18, 2)
+  actualInbound        Decimal? @map("actual_inbound") @db.Decimal(18, 2)
+  purchaseAmount       Decimal? @map("purchase_amount") @db.Decimal(18, 2)
+  remainingQuantity    Decimal? @map("remaining_quantity") @db.Decimal(18, 2)
+  distributionShipment Decimal? @map("distribution_shipment") @db.Decimal(18, 2)
+  consumableAmount     Decimal? @map("consumable_amount") @db.Decimal(18, 2)
+  rawRow               Json?    @map("raw_row")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  project    Project    @relation(fields: [projectId], references: [id])
+  sourceFile SourceFile @relation(fields: [sourceFileId], references: [id])
+
+  @@index([projectId, reportDate, sapCode])
+  @@map("purchase_rows")
+}
+
+model AlertRule {
+  id          String        @id @default(cuid())
+  projectId   String?       @map("project_id")
+  code        String
+  name        String
+  description String?
+  severity    AlertSeverity
+  metric      String
+  operator    String
+  threshold   Decimal?      @db.Decimal(18, 4)
+  windowDays  Int?          @map("window_days")
+  isActive    Boolean       @default(true) @map("is_active")
+  config      Json?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  project Project?     @relation(fields: [projectId], references: [id])
+  events  AlertEvent[]
+
+  @@unique([projectId, code])
+  @@map("alert_rules")
+}
+
+model AlertEvent {
+  id            String        @id @default(cuid())
+  projectId     String        @map("project_id")
+  alertRuleId   String?       @map("alert_rule_id")
+  reportDate    DateTime      @map("report_date") @db.Date
+  sourceFileId  String?       @map("source_file_id")
+  uploadBatchId String?       @map("upload_batch_id")
+  severity      AlertSeverity
+  status        AlertStatus   @default(open)
+  title         String
+  message       String
+  metricValue   Decimal?      @map("metric_value") @db.Decimal(18, 4)
+  payload       Json?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  project Project    @relation(fields: [projectId], references: [id])
+  rule    AlertRule? @relation(fields: [alertRuleId], references: [id])
+
+  @@index([projectId, status, severity])
+  @@map("alert_events")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?  @map("user_id")
+  action     String
+  resource   String
+  resourceId String?  @map("resource_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@map("audit_logs")
+}
