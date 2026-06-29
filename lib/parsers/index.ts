@@ -10,6 +10,11 @@ import { parseInventory } from "@/lib/parsers/inventory";
 import { parsePurchase } from "@/lib/parsers/purchase";
 
 export function inferParserType(fileName: string, sheetNames: string[]): ParserType {
+  if (/销售日报/.test(fileName)) return "sales";
+  if (/推广/.test(fileName)) return "promotion";
+  if (/商品日报|库存/.test(fileName)) return "inventory";
+  if (/采购|台账/.test(fileName)) return "purchase";
+  if (/管报|利润情况/.test(fileName)) return "management";
   if (/财报/.test(fileName) || sheetNames.some((name) => /资产负债表|现金流量表|支付明细/.test(name))) return "finance";
   if (/推广/.test(fileName) || sheetNames.some((name) => /营销场景|推广|复盘/.test(name))) return "promotion";
   if (/销售日报/.test(fileName) || sheetNames.some((name) => /销售数据源|日报/.test(name))) return "sales";
