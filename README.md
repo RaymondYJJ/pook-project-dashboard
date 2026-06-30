@@ -32,18 +32,24 @@ npm install
 cp .env.example .env
 ```
 
+本地开发默认使用本机 Docker PostgreSQL，不依赖 Supabase：
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/pook_dashboard?schema=public"
+AUTH_SECRET="replace-with-a-long-random-secret"
+UPLOAD_DIR="./uploads"
+```
+
 3. 启动 PostgreSQL
 
 ```bash
-docker compose up -d db
+npm run db:up
 ```
 
 4. 初始化数据库
 
 ```bash
-npm run prisma:generate
-npm run prisma:migrate
-npm run seed
+npm run setup:local
 ```
 
 5. 启动开发服务器
@@ -58,6 +64,21 @@ npm run dev
 
 - 邮箱：`admin@example.com`
 - 密码：`admin123456`
+
+认证方式说明：
+
+- 不使用 Supabase。
+- 登录读取本地 PostgreSQL 的 `users` 表。
+- 密码使用 `bcryptjs` 校验。
+- 登录成功后写入 HTTP-only cookie：`pook_session`。
+- session 使用 `AUTH_SECRET` 签发 JWT，有效期 8 小时。
+
+如果 `npm run db:up` 拉取 `postgres:16-alpine` 失败，通常是 Docker Hub 临时网络问题。稍后重试即可；也可以先手动执行：
+
+```bash
+docker pull postgres:16-alpine
+npm run db:up
+```
 
 ## 导入样本文件
 

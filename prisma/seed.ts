@@ -34,13 +34,22 @@ async function main() {
   const adminRole = await prisma.role.findUniqueOrThrow({ where: { code: "super_admin" } });
   const admin = await prisma.user.upsert({
     where: { email: "admin@example.com" },
-    update: {},
+    update: {
+      name: "系统管理员",
+      isActive: true
+    },
     create: {
       email: "admin@example.com",
       name: "系统管理员",
       passwordHash: await bcrypt.hash("admin123456", 10),
       roles: { create: { roleId: adminRole.id } }
     }
+  });
+
+  await prisma.userRole.upsert({
+    where: { userId_roleId: { userId: admin.id, roleId: adminRole.id } },
+    update: {},
+    create: { userId: admin.id, roleId: adminRole.id }
   });
 
   for (const project of [taiyue, luxueya]) {
