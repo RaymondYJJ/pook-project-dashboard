@@ -1,22 +1,30 @@
 import { formatMoney } from "@/lib/utils";
 
+export type MetricDatum = {
+  value: number | null;
+  sourceDate: string | null;
+  updatedAt: string | null;
+};
+
 export type ProjectSummary = {
   id: string;
   code: "taiyue" | "luxueya";
   name: string;
   entityName: string;
-  todayGmv: number;
-  monthGmv: number;
-  completionRate: number;
-  salesOutbound: number;
-  projectProfit: number;
-  cashBalance: number;
-  receivables: number;
-  payables: number;
-  inventoryAmount: number;
-  turnoverDays: number;
-  alertCount: number;
+  todaySales: MetricDatum;
+  monthSales: MetricDatum;
+  completionRate: MetricDatum;
+  salesOutbound: MetricDatum;
+  projectProfit: MetricDatum;
+  cashBalance: MetricDatum;
+  receivables: MetricDatum;
+  payables: MetricDatum;
+  inventoryAmount: MetricDatum;
+  turnoverDays: MetricDatum;
+  alertCount: MetricDatum;
 };
+
+const emptyMetric: MetricDatum = { value: null, sourceDate: null, updatedAt: null };
 
 export const fallbackProjects: ProjectSummary[] = [
   {
@@ -24,34 +32,34 @@ export const fallbackProjects: ProjectSummary[] = [
     code: "taiyue",
     name: "太樾项目经营状态",
     entityName: "璞樾",
-    todayGmv: 0,
-    monthGmv: 0,
-    completionRate: 0,
-    salesOutbound: 0,
-    projectProfit: 0,
-    cashBalance: 0,
-    receivables: 0,
-    payables: 0,
-    inventoryAmount: 0,
-    turnoverDays: 0,
-    alertCount: 0
+    todaySales: emptyMetric,
+    monthSales: emptyMetric,
+    completionRate: emptyMetric,
+    salesOutbound: emptyMetric,
+    projectProfit: emptyMetric,
+    cashBalance: emptyMetric,
+    receivables: emptyMetric,
+    payables: emptyMetric,
+    inventoryAmount: emptyMetric,
+    turnoverDays: emptyMetric,
+    alertCount: emptyMetric
   },
   {
     id: "luxueya",
     code: "luxueya",
     name: "绿雪芽项目经营状态",
     entityName: "佰茶",
-    todayGmv: 0,
-    monthGmv: 0,
-    completionRate: 0,
-    salesOutbound: 0,
-    projectProfit: 0,
-    cashBalance: 0,
-    receivables: 0,
-    payables: 0,
-    inventoryAmount: 0,
-    turnoverDays: 0,
-    alertCount: 0
+    todaySales: emptyMetric,
+    monthSales: emptyMetric,
+    completionRate: emptyMetric,
+    salesOutbound: emptyMetric,
+    projectProfit: emptyMetric,
+    cashBalance: emptyMetric,
+    receivables: emptyMetric,
+    payables: emptyMetric,
+    inventoryAmount: emptyMetric,
+    turnoverDays: emptyMetric,
+    alertCount: emptyMetric
   }
 ];
 
@@ -66,11 +74,11 @@ export const demoTrend = [
 
 export function kpiRows(project: ProjectSummary) {
   return [
-    ["今日GMV", formatMoney(project.todayGmv)],
-    ["本月GMV", formatMoney(project.monthGmv)],
-    ["销售出库", formatMoney(project.salesOutbound)],
-    ["项目利润", formatMoney(project.projectProfit)],
-    ["现金余额", formatMoney(project.cashBalance)],
-    ["库存金额", formatMoney(project.inventoryAmount)]
+    ["今日GMV", formatMoney(project.todaySales.value)],
+    ["本月GMV", formatMoney(project.monthSales.value)],
+    ["销售出库", formatMoney(project.salesOutbound.value)],
+    ["项目利润", formatMoney(project.projectProfit.value)],
+    ["现金余额", formatMoney(project.cashBalance.value)],
+    ["库存金额", formatMoney(project.inventoryAmount.value)]
   ];
 }

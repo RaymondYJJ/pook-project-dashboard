@@ -1,7 +1,5 @@
 import { Shell, PageHeader, Card } from "@/components/ui";
 import { ProjectCard } from "@/components/project-card";
-import { TrendChart } from "@/components/charts";
-import { demoTrend } from "@/lib/data/fallback";
 import { getProjectSummaries } from "@/lib/data/dashboard";
 
 export default async function DashboardPage() {
@@ -16,8 +14,13 @@ export default async function DashboardPage() {
       </div>
       <div className="mt-5 grid gap-5 lg:grid-cols-3">
         <Card className="lg:col-span-2">
-          <h2 className="mb-4 text-base font-semibold text-ink">GMV趋势</h2>
-          <TrendChart data={demoTrend} />
+          <h2 className="text-base font-semibold text-ink">数据口径</h2>
+          <div className="mt-4 grid gap-3 text-sm leading-6 text-slate-600 md:grid-cols-2">
+            <p>经营卡片默认读取每个项目、报表类型、报表日期的最新确认版本。历史版本保留在上传中心，可按需回滚激活。</p>
+            <p>缺失指标显示“待上传”或“待核实”，不会用 0 替代，避免管理层误判经营状态。</p>
+            <p>投资人角色仅查看汇总指标和图表，不展示支付明细、客户信息、原始订单和底层交易流水。</p>
+            <p>每个 KPI 下方展示数据来源日期与最后更新时间，用于追踪报表时效。</p>
+          </div>
         </Card>
         <Card>
           <h2 className="text-base font-semibold text-ink">今日关注</h2>

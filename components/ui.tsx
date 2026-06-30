@@ -50,7 +50,19 @@ export function Card({ className, children }: { className?: string; children: Re
   return <section className={cn("rounded-lg border border-slate-200 bg-white p-5 shadow-cockpit", className)}>{children}</section>;
 }
 
-export function Kpi({ label, value, tone = "default" }: { label: string; value: string; tone?: "default" | "risk" | "gold" | "green" }) {
+export function Kpi({
+  label,
+  value,
+  tone = "default",
+  sourceDate,
+  updatedAt
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "risk" | "gold" | "green";
+  sourceDate?: string | null;
+  updatedAt?: string | null;
+}) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <div className="text-xs text-slate-500">{label}</div>
@@ -64,6 +76,10 @@ export function Kpi({ label, value, tone = "default" }: { label: string; value: 
         )}
       >
         {value}
+      </div>
+      <div className="mt-2 text-[11px] leading-4 text-slate-400">
+        <div>数据：{sourceDate ?? "待上传"}</div>
+        <div>更新：{updatedAt ?? "待核实"}</div>
       </div>
     </div>
   );
