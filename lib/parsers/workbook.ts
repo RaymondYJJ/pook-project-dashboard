@@ -64,7 +64,8 @@ export function findCellValue(rows: unknown[][], label: RegExp, valueOffset = 1)
 export function rowValue(row: RowObject, aliases: string[]) {
   const entries = Object.entries(row);
   for (const alias of aliases) {
-    const hit = entries.find(([key]) => key.replace(/\s/g, "").includes(alias));
+    const normalizedAlias = alias.replace(/\s/g, "").toLowerCase();
+    const hit = entries.find(([key]) => key.replace(/\s/g, "").toLowerCase().includes(normalizedAlias));
     if (hit) return hit[1];
   }
   return null;

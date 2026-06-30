@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { inferProjectFromName, inferReportMonthFromName, todayUtcDate } from "@/lib/utils";
+import { inferProjectFromName, inferReportDateFromName, inferReportMonthFromName, todayUtcDate } from "@/lib/utils";
 import { detectFormulaIssues, readWorkbook } from "@/lib/parsers/workbook";
 import { emptyParsedFile, type ExcelParserType, type ParsedFile, type ParserType } from "@/lib/parsers/types";
 import { parseFinance } from "@/lib/parsers/finance";
@@ -13,13 +13,16 @@ export function inferParserType(fileName: string, sheetNames: string[]): ParserT
   if (/销售日报/.test(fileName)) return "sales";
   if (/推广/.test(fileName)) return "promotion";
   if (/商品日报|库存/.test(fileName)) return "inventory";
-  if (/采购|台账/.test(fileName)) return "purchase";
-  if (/管报|利润情况/.test(fileName)) return "management";
+  if (/未提货|采购|台账/.test(fileName)) return "purchase";
+  if (/经营日报|管报|利润情况/.test(fileName)) return "management";
+  if (/资金收支|银行流水|应付余额|财报/.test(fileName)) return "finance";
+  if (/运营日报|客服日报|装修数据日报/.test(fileName)) return "sales";
   if (/财报/.test(fileName) || sheetNames.some((name) => /资产负债表|现金流量表|支付明细/.test(name))) return "finance";
+  if (sheetNames.some((name) => /银行流水|资金收支|SAP应付余额/.test(name))) return "finance";
   if (/推广/.test(fileName) || sheetNames.some((name) => /营销场景|推广|复盘/.test(name))) return "promotion";
   if (/销售日报/.test(fileName) || sheetNames.some((name) => /销售数据源|日报/.test(name))) return "sales";
   if (/商品日报|库存|看板/.test(fileName) || sheetNames.some((name) => /总库存|京仓|现货率|不动销/.test(name))) return "inventory";
-  if (/采购|台账/.test(fileName) || sheetNames.some((name) => /采购|台账/.test(name))) return "purchase";
+  if (/未提货|采购|台账/.test(fileName) || sheetNames.some((name) => /未提货|采购|台账/.test(name))) return "purchase";
   if (/管报|利润情况/.test(fileName) || sheetNames.some((name) => /项目看板|Sheet1/.test(name))) return "management";
   if (/html$/i.test(fileName)) return "html-dashboard";
   return "unknown";
@@ -36,7 +39,7 @@ export async function parseSourceFile(filePath: string, originalName = filePath,
   const buffer = await readFile(filePath);
   const projectCode = options.projectCode ?? inferProjectFromName(originalName);
   const reportMonth = options.reportMonth ?? inferReportMonthFromName(originalName);
-  const reportDate = options.reportDate ?? todayUtcDate();
+  const reportDate = options.reportDate ?? inferReportDateFromName(originalName) ?? todayUtcDate();
 
   if (/\.html?$/i.test(originalName)) {
     const parsed = emptyParsedFile({ parserType: "html-dashboard", projectCode, reportMonth, reportDate });

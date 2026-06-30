@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { parseSourceFile, type ExcelParserType, type ParsedFile } from "@/lib/parsers";
 import { alertReportDate, evaluateParsedFile } from "@/lib/alerts/engine";
 import { parseDateValue } from "@/lib/parsers/workbook";
-import { monthStart, todayUtcDate } from "@/lib/utils";
+import { inferReportDateFromName, monthStart, todayUtcDate } from "@/lib/utils";
 
 export type UploadPreview = {
   batchId?: string;
@@ -32,6 +32,8 @@ export type UploadPreview = {
   };
   qualityIssueCount: number;
 };
+
+const reportTypes = new Set<ReportType>(["finance", "management", "sales", "promotion", "inventory", "purchase"]);
 
 export async function saveUploadedFile(file: File) {
   const uploadDir = process.env.UPLOAD_DIR ?? path.join(process.cwd(), "uploads");
@@ -93,6 +95,134 @@ export async function createUploadPreview(input: {
       version,
       parseSummary: toJson(preview),
       qualityIssues: toJson(parsed.qualityIssues)
+    }
+  });
+  const storedPreview = { ...preview, batchId: batch.id, sourceFileId: sourceFile.id };
+  await prisma.uploadBatch.update({ where: { id: batch.id }, data: { preview: toJson(storedPreview) } });
+  await prisma.sourceFile.update({ where: { id: sourceFile.id }, data: { parseSummary: toJson(storedPreview) } });
+  return { batchId: batch.id, sourceFileId: sourceFile.id, preview: storedPreview };
+}
+
+export async function createAutoUploadPreview(input: {
+  file: File;
+  projectCode: ProjectCode;
+  userId?: string | null;
+}) {
+  const saved = await saveUploadedFile(input.file);
+  const project = await prisma.project.findUnique({ where: { code: input.projectCode } });
+  if (!project) throw new Error(`Project not seeded: ${input.projectCode}`);
+
+  const extension = path.extname(input.file.name).toLowerCase();
+  if (extension === ".url") {
+    return createExternalLinkPreview({ file: input.file, saved, projectId: project.id, projectCode: input.projectCode, userId: input.userId });
+  }
+
+  let parsed: ParsedFile;
+  try {
+    parsed = await parseSourceFile(saved.storagePath, input.file.name, { projectCode: input.projectCode });
+  } catch (error) {
+    return createFailedPreview({
+      file: input.file,
+      saved,
+      projectId: project.id,
+      projectCode: input.projectCode,
+      userId: input.userId,
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+  const inferredType = toReportType(parsed.parserType);
+  const reportDate = parsed.reportDate ?? inferReportDateFromName(input.file.name) ?? todayUtcDate();
+  const reportMonth = parsed.reportMonth ?? monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  const version = inferredType ? await nextVersion(project.id, inferredType, reportDate, reportMonth) : 1;
+  const preview = buildUploadPreview(parsed, input.file.name, inferredType, version);
+
+  const batch = await prisma.uploadBatch.create({
+    data: {
+      projectId: project.id,
+      uploadedById: input.userId ?? undefined,
+      reportType: inferredType,
+      reportDate,
+      reportMonth,
+      version,
+      status: inferredType ? "parsed" : "pending",
+      note: inferredType ? `Auto preview ${input.file.name}` : `Stored source file ${input.file.name}`,
+      preview: toJson(preview)
+    }
+  });
+  const sourceFile = await prisma.sourceFile.create({
+    data: {
+      projectId: project.id,
+      uploadBatchId: batch.id,
+      originalName: input.file.name,
+      storagePath: saved.storagePath,
+      fileType: extension.replace(".", "") || "unknown",
+      parserType: parsed.parserType,
+      reportType: inferredType,
+      reportDate,
+      reportMonth,
+      checksum: saved.checksum,
+      version,
+      parseSummary: toJson(preview),
+      qualityIssues: toJson(parsed.qualityIssues)
+    }
+  });
+  const storedPreview = { ...preview, batchId: batch.id, sourceFileId: sourceFile.id };
+  await prisma.uploadBatch.update({ where: { id: batch.id }, data: { preview: toJson(storedPreview) } });
+  await prisma.sourceFile.update({ where: { id: sourceFile.id }, data: { parseSummary: toJson(storedPreview) } });
+  return { batchId: batch.id, sourceFileId: sourceFile.id, preview: storedPreview };
+}
+
+async function createFailedPreview(input: {
+  file: File;
+  saved: { storagePath: string; checksum: string; size: number };
+  projectId: string;
+  projectCode: ProjectCode;
+  userId?: string | null;
+  message: string;
+}) {
+  const reportDate = inferReportDateFromName(input.file.name) ?? todayUtcDate();
+  const reportMonth = monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  const preview = {
+    fileName: input.file.name,
+    projectCode: input.projectCode,
+    reportType: "parse_failed",
+    reportDate: reportDate.toISOString().slice(0, 10),
+    reportMonth: reportMonth.toISOString().slice(0, 10),
+    version: 1,
+    sheets: [],
+    fields: [],
+    coreMetrics: { error: input.message },
+    rowCounts: {},
+    anomalyCounts: { PARSE_FAILED: 1 },
+    anomalyFlags: { formulaErrors: false, refErrors: false, div0Errors: false, valueErrors: false, emptyFields: false, duplicateDates: false },
+    qualityIssueCount: 1
+  };
+  const batch = await prisma.uploadBatch.create({
+    data: {
+      projectId: input.projectId,
+      uploadedById: input.userId ?? undefined,
+      reportDate,
+      reportMonth,
+      version: 1,
+      status: "failed",
+      note: `Parse failed ${input.file.name}`,
+      preview: toJson(preview)
+    }
+  });
+  const sourceFile = await prisma.sourceFile.create({
+    data: {
+      projectId: input.projectId,
+      uploadBatchId: batch.id,
+      originalName: input.file.name,
+      storagePath: input.saved.storagePath,
+      fileType: path.extname(input.file.name).replace(".", "") || "unknown",
+      parserType: "parse-failed",
+      reportDate,
+      reportMonth,
+      checksum: input.saved.checksum,
+      version: 1,
+      parseSummary: toJson(preview),
+      qualityIssues: toJson([{ code: "PARSE_FAILED", severity: "red", message: input.message }])
     }
   });
   const storedPreview = { ...preview, batchId: batch.id, sourceFileId: sourceFile.id };
@@ -345,10 +475,10 @@ function usesMonth(reportType: ReportType) {
 }
 
 function toReportType(parserType: ParsedFile["parserType"]): ReportType | null {
-  return ["finance", "management", "sales", "promotion", "inventory", "purchase"].includes(parserType) ? (parserType as ReportType) : null;
+  return reportTypes.has(parserType as ReportType) ? (parserType as ReportType) : null;
 }
 
-function buildUploadPreview(parsed: ParsedFile, fileName: string, reportType: ReportType, version: number): UploadPreview {
+function buildUploadPreview(parsed: ParsedFile, fileName: string, reportType: ReportType | null, version: number): UploadPreview {
   const rowCounts = {
     financeSnapshots: parsed.financeSnapshots.length,
     cashflowSnapshots: parsed.cashflowSnapshots.length,
@@ -371,7 +501,7 @@ function buildUploadPreview(parsed: ParsedFile, fileName: string, reportType: Re
   return {
     fileName,
     projectCode: parsed.projectCode,
-    reportType,
+    reportType: reportType ?? "management",
     reportDate: parsed.reportDate.toISOString().slice(0, 10),
     reportMonth: parsed.reportMonth.toISOString().slice(0, 10),
     version,
@@ -390,6 +520,67 @@ function buildUploadPreview(parsed: ParsedFile, fileName: string, reportType: Re
     },
     qualityIssueCount: parsed.qualityIssues.length
   };
+}
+
+async function createExternalLinkPreview(input: {
+  file: File;
+  saved: { storagePath: string; checksum: string; size: number };
+  projectId: string;
+  projectCode: ProjectCode;
+  userId?: string | null;
+}) {
+  const buffer = Buffer.from(await input.file.arrayBuffer());
+  const content = buffer.toString("utf8");
+  const url = content.match(/URL=(.+)/i)?.[1]?.trim() ?? content.match(/https?:\/\/\S+/)?.[0] ?? "";
+  const reportDate = inferReportDateFromName(input.file.name) ?? todayUtcDate();
+  const reportMonth = monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  const preview = {
+    fileName: input.file.name,
+    projectCode: input.projectCode,
+    reportType: "external_link",
+    reportDate: reportDate.toISOString().slice(0, 10),
+    reportMonth: reportMonth.toISOString().slice(0, 10),
+    version: 1,
+    sheets: [],
+    fields: ["url"],
+    coreMetrics: { externalLink: url || "未识别到链接", note: "飞书快捷链接作为外部参考资料留存，不参与经营指标计算。" },
+    rowCounts: {},
+    anomalyCounts: url ? {} : { MISSING_EXTERNAL_URL: 1 },
+    anomalyFlags: { formulaErrors: false, refErrors: false, div0Errors: false, valueErrors: false, emptyFields: !url, duplicateDates: false },
+    qualityIssueCount: url ? 0 : 1
+  };
+  const batch = await prisma.uploadBatch.create({
+    data: {
+      projectId: input.projectId,
+      uploadedById: input.userId ?? undefined,
+      reportDate,
+      reportMonth,
+      version: 1,
+      status: "parsed",
+      note: `External link ${input.file.name}`,
+      preview: toJson(preview)
+    }
+  });
+  const sourceFile = await prisma.sourceFile.create({
+    data: {
+      projectId: input.projectId,
+      uploadBatchId: batch.id,
+      originalName: input.file.name,
+      storagePath: input.saved.storagePath,
+      fileType: "url",
+      parserType: "external-link",
+      reportDate,
+      reportMonth,
+      checksum: input.saved.checksum,
+      version: 1,
+      parseSummary: toJson(preview),
+      qualityIssues: toJson(url ? [] : [{ code: "MISSING_EXTERNAL_URL", severity: "yellow", message: "未在 .url 文件中识别到可打开链接。" }])
+    }
+  });
+  const storedPreview = { ...preview, batchId: batch.id, sourceFileId: sourceFile.id };
+  await prisma.uploadBatch.update({ where: { id: batch.id }, data: { preview: toJson(storedPreview) } });
+  await prisma.sourceFile.update({ where: { id: sourceFile.id }, data: { parseSummary: toJson(storedPreview) } });
+  return { batchId: batch.id, sourceFileId: sourceFile.id, preview: storedPreview };
 }
 
 function collectFields(parsed: ParsedFile) {

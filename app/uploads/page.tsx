@@ -8,6 +8,8 @@ type UploadsPageProps = {
     error?: string;
     confirmed?: string;
     rolledBack?: string;
+    uploaded?: string;
+    failed?: string;
   };
 };
 
@@ -17,7 +19,9 @@ const reportTypeLabels: Record<string, string> = {
   sales: "销售日报",
   promotion: "推广日报",
   inventory: "商品日报",
-  purchase: "采购台账"
+  purchase: "采购台账",
+  "external_link": "外部报告链接",
+  "parse_failed": "解析失败"
 };
 
 const projectLabels: Record<string, string> = {
@@ -67,37 +71,24 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
       ) : null}
       {searchParams?.confirmed ? <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">已确认入库，看板会读取该日期的最新确认版本。</div> : null}
       {searchParams?.rolledBack ? <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">已回滚并激活选中的历史版本。</div> : null}
+      {searchParams?.uploaded ? <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">已完成 {searchParams.uploaded} 个文件的自动识别预览{searchParams.failed ? `，${searchParams.failed} 个文件失败` : ""}。</div> : null}
 
       <Card>
-        <form action="/api/uploads" method="post" encType="multipart/form-data" className="grid gap-4 lg:grid-cols-[1fr_1fr_1fr_1.2fr_auto] lg:items-end">
+        <form action="/api/uploads" method="post" encType="multipart/form-data" className="grid gap-4 lg:grid-cols-[1fr_2fr_auto] lg:items-end">
           <label className="grid gap-2 text-sm font-medium text-slate-700">
-            项目
+            品牌 / 项目
             <select name="projectCode" required className="rounded border border-slate-300 bg-white px-3 py-2 text-sm">
               <option value="taiyue">太樾</option>
               <option value="luxueya">绿雪芽</option>
             </select>
           </label>
           <label className="grid gap-2 text-sm font-medium text-slate-700">
-            报表类型
-            <select name="reportType" required className="rounded border border-slate-300 bg-white px-3 py-2 text-sm">
-              <option value="finance">财报</option>
-              <option value="management">管报</option>
-              <option value="sales">销售日报</option>
-              <option value="promotion">推广日报</option>
-              <option value="inventory">商品日报</option>
-              <option value="purchase">采购台账</option>
-            </select>
+            数据文件
+            <input name="files" type="file" multiple required accept=".xlsx,.xls,.html,.htm,.url" className="rounded border border-slate-300 bg-white px-3 py-2 text-sm" />
           </label>
-          <label className="grid gap-2 text-sm font-medium text-slate-700">
-            报表日期或月份
-            <input name="reportDate" type="date" required className="rounded border border-slate-300 bg-white px-3 py-2 text-sm" />
-          </label>
-          <label className="grid gap-2 text-sm font-medium text-slate-700">
-            Excel 文件
-            <input name="file" type="file" required accept=".xlsx,.xls" className="rounded border border-slate-300 bg-white px-3 py-2 text-sm" />
-          </label>
-          <button className="rounded bg-navy px-5 py-2.5 text-sm font-medium text-white">上传并解析</button>
+          <button className="rounded bg-navy px-5 py-2.5 text-sm font-medium text-white">批量上传并自动识别</button>
         </form>
+        <p className="mt-3 text-xs leading-5 text-slate-500">系统会根据文件名和表格 sheet 自动识别报表类型、日期/月和数据维度。你只需要选择品牌/项目；无法入库的 HTML 或飞书快捷链接会作为外部报告资料留存。</p>
       </Card>
 
       {selectedBatch && preview ? (
@@ -106,11 +97,11 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             <div>
               <h2 className="text-base font-semibold text-ink">解析预览</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {selectedBatch.sourceFiles[0]?.originalName} · {projectLabels[selectedBatch.project?.code ?? ""] ?? "-"} · {reportTypeLabels[String(selectedBatch.reportType)] ?? "-"} · v{selectedBatch.version}
+                {selectedBatch.sourceFiles[0]?.originalName} · {projectLabels[selectedBatch.project?.code ?? ""] ?? "-"} · {reportTypeLabels[String(selectedBatch.reportType ?? preview.reportType)] ?? "自动识别待确认"} · v{selectedBatch.version}
               </p>
             </div>
             <div className="flex gap-2">
-              {selectedBatch.status === "parsed" ? (
+              {selectedBatch.status === "parsed" && selectedBatch.reportType ? (
                 <form action="/api/uploads/confirm" method="post">
                   <input type="hidden" name="batchId" value={selectedBatch.id} />
                   <button className="rounded bg-pine px-4 py-2 text-sm font-medium text-white">确认入库</button>
@@ -172,7 +163,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                   <tr key={batch.id} className="border-t">
                     <td className="max-w-64 truncate py-3">{sourceFile?.originalName ?? "-"}</td>
                     <td>{batch.project?.name ?? "-"}</td>
-                    <td>{reportTypeLabels[String(batch.reportType)] ?? "-"}</td>
+                    <td>{reportTypeLabels[String(batch.reportType ?? (sourceFile?.parseSummary as Record<string, unknown> | null)?.reportType)] ?? "资料留存"}</td>
                     <td>{formatDate(batch.reportType === "finance" || batch.reportType === "management" ? batch.reportMonth : batch.reportDate)}</td>
                     <td>v{batch.version}</td>
                     <td><StatusPill tone={batch.activeAt ? "green" : batch.status === "failed" ? "red" : "neutral"}>{batch.activeAt ? "当前版本" : statusLabel(batch.status)}</StatusPill></td>

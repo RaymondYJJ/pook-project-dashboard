@@ -48,6 +48,17 @@ export function inferReportMonthFromName(name: string) {
   return monthStart(Number(year ?? 2026), Number(month ?? 6));
 }
 
+export function inferReportDateFromName(name: string) {
+  const year = Number(name.match(/20\d{2}/)?.[0] ?? 2026);
+  const compactMonthDay = name.match(/(?:^|[^\d])([01]\d)([0-3]\d)(?:[^\d]|$)/);
+  if (compactMonthDay) return new Date(Date.UTC(year, Number(compactMonthDay[1]) - 1, Number(compactMonthDay[2])));
+  const monthDay = name.match(/(?:^|[^\d])([01]?\d)[.-]([0-3]?\d)(?!月)(?:[^\d]|$)/);
+  if (monthDay) return new Date(Date.UTC(year, Number(monthDay[1]) - 1, Number(monthDay[2])));
+  const chinese = name.match(/(?:20\d{2}年)?([01]?\d)月([0-3]?\d)[日号]?/);
+  if (chinese) return new Date(Date.UTC(year, Number(chinese[1]) - 1, Number(chinese[2])));
+  return inferReportMonthFromName(name);
+}
+
 export function todayUtcDate() {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
