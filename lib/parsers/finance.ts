@@ -111,3 +111,5 @@ export function parseFinance(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   }
   return parsed;
 }
+
+export const financeParser = parseFinance;

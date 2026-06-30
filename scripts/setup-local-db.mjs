@@ -1,9 +1,10 @@
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const migrationPath = path.join(root, "prisma/migrations/20260629000000_init/migration.sql");
+const migrationsDir = path.join(root, "prisma/migrations");
+const initMigrationPath = path.join(migrationsDir, "20260629000000_init/migration.sql");
 
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
@@ -43,9 +44,51 @@ function hasUsersTable() {
   return result.stdout.trim() === "t";
 }
 
+function hasColumn(tableName, columnName) {
+  const result = run(
+    "docker",
+    [
+      "exec",
+      "pook-dashboard-db",
+      "psql",
+      "-U",
+      "postgres",
+      "-d",
+      "pook_dashboard",
+      "-tAc",
+      `select exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = '${tableName}' and column_name = '${columnName}');`
+    ],
+    { capture: true, allowFailure: true }
+  );
+  return result.stdout.trim() === "t";
+}
+
+function applyMigration(migrationPath) {
+  const containerPath = `/tmp/${path.basename(path.dirname(migrationPath))}.sql`;
+  run("docker", ["cp", migrationPath, `pook-dashboard-db:${containerPath}`]);
+  run("docker", ["exec", "pook-dashboard-db", "psql", "-U", "postgres", "-d", "pook_dashboard", "-v", "ON_ERROR_STOP=1", "-f", containerPath]);
+}
+
+function applyPendingCompatibilityMigrations() {
+  const migrations = readdirSync(migrationsDir)
+    .filter((name) => /^\d+_/.test(name))
+    .sort()
+    .map((name) => path.join(migrationsDir, name, "migration.sql"))
+    .filter((migrationPath) => migrationPath !== initMigrationPath && existsSync(migrationPath));
+
+  if (!hasColumn("source_files", "is_active_version")) {
+    for (const migrationPath of migrations) {
+      console.log(`Applying compatibility migration ${path.basename(path.dirname(migrationPath))}...`);
+      applyMigration(migrationPath);
+    }
+  } else {
+    console.log("Upload preview/version schema already exists; skipping compatibility migrations.");
+  }
+}
+
 async function main() {
-  if (!existsSync(migrationPath)) {
-    throw new Error(`Missing migration file: ${migrationPath}`);
+  if (!existsSync(initMigrationPath)) {
+    throw new Error(`Missing migration file: ${initMigrationPath}`);
   }
 
   run("npx", ["prisma", "generate"]);
@@ -55,10 +98,10 @@ async function main() {
   if (hasUsersTable()) {
     console.log("Database schema already exists; skipping migration.sql.");
   } else {
-    run("docker", ["cp", migrationPath, "pook-dashboard-db:/tmp/migration.sql"]);
-    run("docker", ["exec", "pook-dashboard-db", "psql", "-U", "postgres", "-d", "pook_dashboard", "-v", "ON_ERROR_STOP=1", "-f", "/tmp/migration.sql"]);
+    applyMigration(initMigrationPath);
   }
 
+  applyPendingCompatibilityMigrations();
   run("npx", ["tsx", "prisma/seed.ts"]);
   console.log("Local database is ready. Login with admin@example.com / admin123456.");
 }

@@ -1,12 +1,37 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import crypto from "node:crypto";
-import { Prisma } from "@prisma/client";
+import { Prisma, type ProjectCode, type ReportType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { parseSourceFile, type ParsedFile } from "@/lib/parsers";
+import { parseSourceFile, type ExcelParserType, type ParsedFile } from "@/lib/parsers";
 import { alertReportDate, evaluateParsedFile } from "@/lib/alerts/engine";
 import { parseDateValue } from "@/lib/parsers/workbook";
-import { todayUtcDate } from "@/lib/utils";
+import { monthStart, todayUtcDate } from "@/lib/utils";
+
+export type UploadPreview = {
+  batchId?: string;
+  sourceFileId?: string;
+  fileName: string;
+  projectCode: ProjectCode;
+  reportType: ReportType;
+  reportDate: string;
+  reportMonth: string;
+  version: number;
+  sheets: string[];
+  fields: string[];
+  coreMetrics: Record<string, unknown>;
+  rowCounts: Record<string, number>;
+  anomalyCounts: Record<string, number>;
+  anomalyFlags: {
+    formulaErrors: boolean;
+    refErrors: boolean;
+    div0Errors: boolean;
+    valueErrors: boolean;
+    emptyFields: boolean;
+    duplicateDates: boolean;
+  };
+  qualityIssueCount: number;
+};
 
 export async function saveUploadedFile(file: File) {
   const uploadDir = process.env.UPLOAD_DIR ?? path.join(process.cwd(), "uploads");
@@ -19,17 +44,178 @@ export async function saveUploadedFile(file: File) {
   return { storagePath, checksum, size: buffer.length };
 }
 
+export async function createUploadPreview(input: {
+  file: File;
+  projectCode: ProjectCode;
+  reportType: ReportType;
+  reportDate: Date;
+  userId?: string | null;
+}) {
+  const saved = await saveUploadedFile(input.file);
+  const project = await prisma.project.findUnique({ where: { code: input.projectCode } });
+  if (!project) throw new Error(`Project not seeded: ${input.projectCode}`);
+
+  const reportMonth = monthStart(input.reportDate.getUTCFullYear(), input.reportDate.getUTCMonth() + 1);
+  const version = await nextVersion(project.id, input.reportType, input.reportDate, reportMonth);
+  const parsed = await parseSourceFile(saved.storagePath, input.file.name, {
+    projectCode: input.projectCode,
+    parserType: input.reportType as ExcelParserType,
+    reportDate: input.reportDate,
+    reportMonth
+  });
+  const preview = buildUploadPreview(parsed, input.file.name, input.reportType, version);
+
+  const batch = await prisma.uploadBatch.create({
+    data: {
+      projectId: project.id,
+      uploadedById: input.userId ?? undefined,
+      reportType: input.reportType,
+      reportDate: input.reportDate,
+      reportMonth,
+      version,
+      status: "parsed",
+      note: `Preview ${input.file.name}`,
+      preview: toJson(preview)
+    }
+  });
+  const sourceFile = await prisma.sourceFile.create({
+    data: {
+      projectId: project.id,
+      uploadBatchId: batch.id,
+      originalName: input.file.name,
+      storagePath: saved.storagePath,
+      fileType: path.extname(input.file.name).replace(".", "") || "unknown",
+      parserType: parsed.parserType,
+      reportType: input.reportType,
+      reportDate: input.reportDate,
+      reportMonth,
+      checksum: saved.checksum,
+      version,
+      parseSummary: toJson(preview),
+      qualityIssues: toJson(parsed.qualityIssues)
+    }
+  });
+  const storedPreview = { ...preview, batchId: batch.id, sourceFileId: sourceFile.id };
+  await prisma.uploadBatch.update({ where: { id: batch.id }, data: { preview: toJson(storedPreview) } });
+  await prisma.sourceFile.update({ where: { id: sourceFile.id }, data: { parseSummary: toJson(storedPreview) } });
+  return { batchId: batch.id, sourceFileId: sourceFile.id, preview: storedPreview };
+}
+
+export async function confirmUploadBatch(batchId: string, userId?: string | null) {
+  const batch = await prisma.uploadBatch.findUnique({ where: { id: batchId }, include: { sourceFiles: true, project: true } });
+  if (!batch || !batch.projectId || !batch.reportType || !batch.reportDate || !batch.reportMonth) throw new Error("Upload batch is incomplete.");
+  const sourceFile = batch.sourceFiles[0];
+  if (!sourceFile) throw new Error("Upload batch has no source file.");
+  const projectId = batch.projectId;
+  const reportType = batch.reportType;
+  const reportDate = batch.reportDate;
+  const reportMonth = batch.reportMonth;
+
+  const parsed = await parseSourceFile(sourceFile.storagePath, sourceFile.originalName, {
+    projectCode: batch.project?.code ?? "luxueya",
+    parserType: reportType as ExcelParserType,
+    reportDate,
+    reportMonth
+  });
+
+  await prisma.$transaction(async (tx) => {
+    await clearImportedRows(tx, batch.id);
+    await persistParsed(projectId, batch.id, sourceFile.id, parsed, tx);
+    await tx.sourceFile.updateMany({
+      where: {
+        projectId,
+        reportType,
+        ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
+      },
+      data: { isActiveVersion: false }
+    });
+    const now = new Date();
+    await tx.sourceFile.update({
+      where: { id: sourceFile.id },
+      data: {
+        isActiveVersion: true,
+        confirmedAt: now,
+        parseSummary: toJson(buildUploadPreview(parsed, sourceFile.originalName, reportType, sourceFile.version)),
+        qualityIssues: toJson(parsed.qualityIssues)
+      }
+    });
+    await tx.uploadBatch.update({
+      where: { id: batch.id },
+      data: { status: "imported", confirmedAt: now, activeAt: now, preview: toJson(buildUploadPreview(parsed, sourceFile.originalName, reportType, sourceFile.version)) }
+    });
+    await tx.auditLog.create({
+      data: {
+        userId: userId ?? undefined,
+        action: "upload.confirm",
+        resource: "upload_batch",
+        resourceId: batch.id,
+        metadata: toJson({ sourceFileId: sourceFile.id, reportType, version: sourceFile.version })
+      }
+    });
+  });
+  return { batchId: batch.id, sourceFileId: sourceFile.id };
+}
+
+export async function rollbackToUploadBatch(batchId: string, userId?: string | null) {
+  const batch = await prisma.uploadBatch.findUnique({ where: { id: batchId }, include: { sourceFiles: true } });
+  if (!batch || !batch.projectId || !batch.reportType || !batch.reportDate || !batch.reportMonth) throw new Error("Upload batch is incomplete.");
+  if (batch.status !== "imported") throw new Error("Only imported batches can be activated.");
+  const sourceFile = batch.sourceFiles[0];
+  if (!sourceFile) throw new Error("Upload batch has no source file.");
+  const projectId = batch.projectId;
+  const reportType = batch.reportType;
+  const reportDate = batch.reportDate;
+  const reportMonth = batch.reportMonth;
+  const now = new Date();
+  await prisma.$transaction(async (tx) => {
+    await tx.sourceFile.updateMany({
+      where: {
+        projectId,
+        reportType,
+        ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
+      },
+      data: { isActiveVersion: false }
+    });
+    await tx.sourceFile.update({ where: { id: sourceFile.id }, data: { isActiveVersion: true } });
+    await tx.uploadBatch.updateMany({
+      where: {
+        projectId,
+        reportType,
+        ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
+      },
+      data: { activeAt: null }
+    });
+    await tx.uploadBatch.update({ where: { id: batch.id }, data: { activeAt: now } });
+    await tx.auditLog.create({
+      data: {
+        userId: userId ?? undefined,
+        action: "upload.rollback",
+        resource: "upload_batch",
+        resourceId: batch.id,
+        metadata: toJson({ sourceFileId: sourceFile.id, reportType, version: sourceFile.version })
+      }
+    });
+  });
+}
+
 export async function parseAndImportFile(filePath: string, originalName: string, userId?: string | null) {
   const parsed = await parseSourceFile(filePath, originalName);
   try {
     const project = await prisma.project.findUnique({ where: { code: parsed.projectCode } });
     if (!project) throw new Error(`Project not seeded: ${parsed.projectCode}`);
+    const reportType = toReportType(parsed.parserType);
+    const version = reportType ? await nextVersion(project.id, reportType, parsed.reportDate, parsed.reportMonth) : 1;
     const batch = await prisma.uploadBatch.create({
       data: {
         projectId: project.id,
         uploadedById: userId ?? undefined,
+        reportType,
+        reportDate: parsed.reportDate,
+        reportMonth: parsed.reportMonth,
+        version,
         status: "parsed",
-        note: `Imported ${originalName}`
+        note: `Imported ${originalName}`,
+        preview: toJson(reportType ? buildUploadPreview(parsed, originalName, reportType, version) : parsed.summary)
       }
     });
     const sourceFile = await prisma.sourceFile.create({
@@ -40,74 +226,183 @@ export async function parseAndImportFile(filePath: string, originalName: string,
         storagePath: filePath,
         fileType: path.extname(originalName).replace(".", "") || "unknown",
         parserType: parsed.parserType,
+        reportType,
+        reportDate: parsed.reportDate,
+        reportMonth: parsed.reportMonth,
+        version,
         parseSummary: toJson(parsed.summary),
         qualityIssues: toJson(parsed.qualityIssues)
       }
     });
     await persistParsed(project.id, batch.id, sourceFile.id, parsed);
-    await prisma.uploadBatch.update({ where: { id: batch.id }, data: { status: "imported" } });
+    if (reportType) {
+      await prisma.sourceFile.updateMany({
+        where: {
+          projectId: project.id,
+          reportType,
+          ...(usesMonth(reportType) ? { reportMonth: parsed.reportMonth } : { reportDate: parsed.reportDate })
+        },
+        data: { isActiveVersion: false }
+      });
+    }
+    const now = new Date();
+    await prisma.sourceFile.update({ where: { id: sourceFile.id }, data: { isActiveVersion: Boolean(reportType), confirmedAt: now } });
+    await prisma.uploadBatch.update({ where: { id: batch.id }, data: { status: "imported", confirmedAt: now, activeAt: now } });
     return { parsed, batchId: batch.id, sourceFileId: sourceFile.id, imported: true };
   } catch (error) {
     return { parsed, imported: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-async function persistParsed(projectId: string, uploadBatchId: string, sourceFileId: string, parsed: ParsedFile) {
+async function persistParsed(projectId: string, uploadBatchId: string, sourceFileId: string, parsed: ParsedFile, txClient?: Prisma.TransactionClient) {
   const reportMonth = parsed.reportMonth;
   const reportDate = parsed.reportDate;
-  await prisma.$transaction(async (tx) => {
-    for (const row of parsed.financeSnapshots) {
-      await tx.financeSnapshot.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.FinanceSnapshotUncheckedCreateInput });
-    }
-    for (const row of parsed.cashflowSnapshots) {
-      await tx.cashflowSnapshot.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.CashflowSnapshotUncheckedCreateInput });
-    }
-    for (const row of parsed.balanceSheetItems.slice(0, 2000)) {
-      await tx.balanceSheetItem.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.BalanceSheetItemUncheckedCreateInput });
-    }
-    for (const row of parsed.profitItems.slice(0, 3000)) {
-      await tx.profitItem.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.ProfitItemUncheckedCreateInput });
-    }
-    for (const row of parsed.receivablePayableItems.slice(0, 3000)) {
-      await tx.receivablePayableItem.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.ReceivablePayableItemUncheckedCreateInput });
-    }
-    for (const row of parsed.paymentTransactions.slice(0, 3000)) {
-      await tx.paymentTransaction.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.PaymentTransactionUncheckedCreateInput });
-    }
-    for (const row of parsed.managementReportRows.slice(0, 5000)) {
-      await tx.managementReportRow.create({ data: attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth) as Prisma.ManagementReportRowUncheckedCreateInput });
-    }
-    for (const row of parsed.salesDailyRows.slice(0, 5000)) {
-      await tx.salesDailyRow.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.SalesDailyRowUncheckedCreateInput });
-    }
-    for (const row of parsed.promotionDailyRows.slice(0, 5000)) {
-      await tx.promotionDailyRow.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.PromotionDailyRowUncheckedCreateInput });
-    }
-    for (const row of parsed.inventorySnapshots) {
-      await tx.inventorySnapshot.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.InventorySnapshotUncheckedCreateInput });
-    }
-    for (const row of parsed.inventorySkuRows.slice(0, 5000)) {
-      await tx.inventorySkuRow.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.InventorySkuRowUncheckedCreateInput });
-    }
-    for (const row of parsed.purchaseRows.slice(0, 5000)) {
-      await tx.purchaseRow.create({ data: attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate) as Prisma.PurchaseRowUncheckedCreateInput });
-    }
-    for (const alert of evaluateParsedFile(parsed)) {
-      await tx.alertEvent.create({
-        data: {
-          projectId,
-          reportDate: alertReportDate(),
-          sourceFileId,
-          uploadBatchId,
-          severity: alert.severity,
-          title: alert.title,
-          message: alert.message,
-          metricValue: alert.metricValue ?? undefined,
-          payload: toJson(alert.payload ?? {})
-        }
-      });
-    }
+  const runner = async (tx: Prisma.TransactionClient) => {
+    await createManyChunked(tx.financeSnapshot, parsed.financeSnapshots.map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.cashflowSnapshot, parsed.cashflowSnapshots.map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.balanceSheetItem, parsed.balanceSheetItems.slice(0, 2000).map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.profitItem, parsed.profitItems.slice(0, 3000).map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.receivablePayableItem, parsed.receivablePayableItems.slice(0, 3000).map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.paymentTransaction, parsed.paymentTransactions.slice(0, 3000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(tx.managementReportRow, parsed.managementReportRows.slice(0, 5000).map((row) => attachMonth(row, projectId, sourceFileId, uploadBatchId, reportMonth)));
+    await createManyChunked(tx.salesDailyRow, parsed.salesDailyRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(tx.promotionDailyRow, parsed.promotionDailyRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(tx.inventorySnapshot, parsed.inventorySnapshots.map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(tx.inventorySkuRow, parsed.inventorySkuRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(tx.purchaseRow, parsed.purchaseRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    await createManyChunked(
+      tx.alertEvent,
+      evaluateParsedFile(parsed).map((alert) => ({
+        projectId,
+        reportDate: alertReportDate(),
+        sourceFileId,
+        uploadBatchId,
+        severity: alert.severity,
+        title: alert.title,
+        message: alert.message,
+        metricValue: alert.metricValue ?? undefined,
+        payload: toJson(alert.payload ?? {})
+      }))
+    );
+  };
+  if (txClient) await runner(txClient);
+  else await prisma.$transaction(runner);
+}
+
+async function createManyChunked(model: { createMany: (args: { data: any[] }) => Promise<unknown> }, rows: Record<string, unknown>[]) {
+  const chunkSize = 500;
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    if (chunk.length) await model.createMany({ data: chunk });
+  }
+}
+
+async function clearImportedRows(tx: Prisma.TransactionClient, uploadBatchId: string) {
+  await tx.alertEvent.deleteMany({ where: { uploadBatchId } });
+  await tx.purchaseRow.deleteMany({ where: { uploadBatchId } });
+  await tx.inventorySkuRow.deleteMany({ where: { uploadBatchId } });
+  await tx.inventorySnapshot.deleteMany({ where: { uploadBatchId } });
+  await tx.promotionDailyRow.deleteMany({ where: { uploadBatchId } });
+  await tx.salesDailyRow.deleteMany({ where: { uploadBatchId } });
+  await tx.managementReportRow.deleteMany({ where: { uploadBatchId } });
+  await tx.paymentTransaction.deleteMany({ where: { uploadBatchId } });
+  await tx.receivablePayableItem.deleteMany({ where: { uploadBatchId } });
+  await tx.profitItem.deleteMany({ where: { uploadBatchId } });
+  await tx.balanceSheetItem.deleteMany({ where: { uploadBatchId } });
+  await tx.cashflowSnapshot.deleteMany({ where: { uploadBatchId } });
+  await tx.financeSnapshot.deleteMany({ where: { uploadBatchId } });
+}
+
+async function nextVersion(projectId: string, reportType: ReportType, reportDate: Date, reportMonth: Date) {
+  const latest = await prisma.sourceFile.findFirst({
+    where: {
+      projectId,
+      reportType,
+      ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
+    },
+    orderBy: { version: "desc" }
   });
+  return (latest?.version ?? 0) + 1;
+}
+
+function usesMonth(reportType: ReportType) {
+  return reportType === "finance" || reportType === "management";
+}
+
+function toReportType(parserType: ParsedFile["parserType"]): ReportType | null {
+  return ["finance", "management", "sales", "promotion", "inventory", "purchase"].includes(parserType) ? (parserType as ReportType) : null;
+}
+
+function buildUploadPreview(parsed: ParsedFile, fileName: string, reportType: ReportType, version: number): UploadPreview {
+  const rowCounts = {
+    financeSnapshots: parsed.financeSnapshots.length,
+    cashflowSnapshots: parsed.cashflowSnapshots.length,
+    balanceSheetItems: parsed.balanceSheetItems.length,
+    profitItems: parsed.profitItems.length,
+    receivablePayableItems: parsed.receivablePayableItems.length,
+    paymentTransactions: parsed.paymentTransactions.length,
+    managementReportRows: parsed.managementReportRows.length,
+    salesDailyRows: parsed.salesDailyRows.length,
+    promotionDailyRows: parsed.promotionDailyRows.length,
+    inventorySnapshots: parsed.inventorySnapshots.length,
+    inventorySkuRows: parsed.inventorySkuRows.length,
+    purchaseRows: parsed.purchaseRows.length
+  };
+  const anomalyCounts = parsed.qualityIssues.reduce<Record<string, number>>((acc, issue) => {
+    acc[issue.code] = (acc[issue.code] ?? 0) + 1;
+    return acc;
+  }, {});
+  const issueText = parsed.qualityIssues.map((issue) => `${issue.code} ${issue.message} ${String(issue.value ?? "")}`).join(" ");
+  return {
+    fileName,
+    projectCode: parsed.projectCode,
+    reportType,
+    reportDate: parsed.reportDate.toISOString().slice(0, 10),
+    reportMonth: parsed.reportMonth.toISOString().slice(0, 10),
+    version,
+    sheets: (parsed.summary.sheetNames as string[] | undefined) ?? [],
+    fields: collectFields(parsed),
+    coreMetrics: collectCoreMetrics(parsed),
+    rowCounts,
+    anomalyCounts,
+    anomalyFlags: {
+      formulaErrors: anomalyCounts.FORMULA_ERROR > 0,
+      refErrors: issueText.includes("#REF!"),
+      div0Errors: issueText.includes("#DIV/0!"),
+      valueErrors: issueText.includes("#VALUE!"),
+      emptyFields: anomalyCounts.EMPTY_FIELD > 0 || Number(parsed.summary.emptyFieldCount ?? 0) > 0,
+      duplicateDates: anomalyCounts.DUPLICATE_DATE > 0
+    },
+    qualityIssueCount: parsed.qualityIssues.length
+  };
+}
+
+function collectFields(parsed: ParsedFile) {
+  const fields = new Set<string>();
+  for (const row of [
+    ...parsed.balanceSheetItems,
+    ...parsed.profitItems,
+    ...parsed.receivablePayableItems,
+    ...parsed.paymentTransactions,
+    ...parsed.managementReportRows,
+    ...parsed.salesDailyRows,
+    ...parsed.promotionDailyRows,
+    ...parsed.inventorySkuRows,
+    ...parsed.purchaseRows
+  ]) {
+    for (const key of Object.keys(row.rawRow && typeof row.rawRow === "object" && !Array.isArray(row.rawRow) ? row.rawRow : row)) fields.add(key);
+    if (fields.size >= 80) break;
+  }
+  return Array.from(fields).slice(0, 80);
+}
+
+function collectCoreMetrics(parsed: ParsedFile) {
+  const metrics: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parsed.summary)) {
+    if (["sheetNames", "parserType", "projectCode", "qualityIssueCount"].includes(key)) continue;
+    metrics[key] = value;
+  }
+  return metrics;
 }
 
 function cleanRow(row: Record<string, unknown>) {

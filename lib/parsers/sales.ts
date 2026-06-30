@@ -37,3 +37,5 @@ export function parseSales(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   };
   return parsed;
 }
+
+export const salesDailyParser = parseSales;

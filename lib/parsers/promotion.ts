@@ -41,3 +41,5 @@ export function parsePromotion(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   };
   return parsed;
 }
+
+export const promotionDailyParser = parsePromotion;

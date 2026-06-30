@@ -44,3 +44,5 @@ export function parseManagement(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   };
   return parsed;
 }
+
+export const managementReportParser = parseManagement;

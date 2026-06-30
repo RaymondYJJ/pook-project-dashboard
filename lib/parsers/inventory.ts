@@ -49,6 +49,8 @@ export function parseInventory(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   return parsed;
 }
 
+export const inventoryDailyParser = parseInventory;
+
 function average(values: Array<number | null>) {
   const valid = values.filter((value): value is number => value !== null && Number.isFinite(value));
   if (!valid.length) return null;

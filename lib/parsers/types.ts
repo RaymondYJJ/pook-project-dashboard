@@ -1,4 +1,5 @@
 export type ParserType = "finance" | "management" | "sales" | "promotion" | "inventory" | "purchase" | "html-dashboard" | "unknown";
+export type ExcelParserType = Exclude<ParserType, "html-dashboard" | "unknown">;
 
 export type QualityIssue = {
   code: string;

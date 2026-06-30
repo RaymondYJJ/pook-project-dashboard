@@ -14,12 +14,12 @@ export async function getProjectSummaries(): Promise<ProjectSummary[]> {
       projects.map(async (project) => {
         const [mgmt, finance, inventory, alerts] = await Promise.all([
           prisma.managementReportRow.aggregate({
-            where: { projectId: project.id },
+            where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
             _sum: { gmv: true, salesOutbound: true, projectProfit: true },
             _avg: { profitRate: true }
           }),
-          prisma.financeSnapshot.findFirst({ where: { projectId: project.id }, orderBy: { reportMonth: "desc" } }),
-          prisma.inventorySnapshot.findFirst({ where: { projectId: project.id }, orderBy: { reportDate: "desc" } }),
+          prisma.financeSnapshot.findFirst({ where: { projectId: project.id, sourceFile: { isActiveVersion: true } }, orderBy: { reportMonth: "desc" } }),
+          prisma.inventorySnapshot.findFirst({ where: { projectId: project.id, sourceFile: { isActiveVersion: true } }, orderBy: { reportDate: "desc" } }),
           prisma.alertEvent.count({ where: { projectId: project.id, status: "open" } })
         ]);
         return {

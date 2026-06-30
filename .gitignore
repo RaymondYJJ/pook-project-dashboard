@@ -3,5 +3,5 @@
 .env.local
 .next/
 node_modules/
-uploads/
+/uploads/
 coverage/

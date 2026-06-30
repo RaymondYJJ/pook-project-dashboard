@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { inferProjectFromName, inferReportMonthFromName, todayUtcDate } from "@/lib/utils";
 import { detectFormulaIssues, readWorkbook } from "@/lib/parsers/workbook";
-import { emptyParsedFile, type ParsedFile, type ParserType } from "@/lib/parsers/types";
+import { emptyParsedFile, type ExcelParserType, type ParsedFile, type ParserType } from "@/lib/parsers/types";
 import { parseFinance } from "@/lib/parsers/finance";
 import { parseManagement } from "@/lib/parsers/management";
 import { parseSales } from "@/lib/parsers/sales";
@@ -25,11 +25,18 @@ export function inferParserType(fileName: string, sheetNames: string[]): ParserT
   return "unknown";
 }
 
-export async function parseSourceFile(filePath: string, originalName = filePath): Promise<ParsedFile> {
+export type ParseSourceOptions = {
+  projectCode?: "taiyue" | "luxueya";
+  parserType?: ExcelParserType;
+  reportDate?: Date;
+  reportMonth?: Date;
+};
+
+export async function parseSourceFile(filePath: string, originalName = filePath, options: ParseSourceOptions = {}): Promise<ParsedFile> {
   const buffer = await readFile(filePath);
-  const projectCode = inferProjectFromName(originalName);
-  const reportMonth = inferReportMonthFromName(originalName);
-  const reportDate = todayUtcDate();
+  const projectCode = options.projectCode ?? inferProjectFromName(originalName);
+  const reportMonth = options.reportMonth ?? inferReportMonthFromName(originalName);
+  const reportDate = options.reportDate ?? todayUtcDate();
 
   if (/\.html?$/i.test(originalName)) {
     const parsed = emptyParsedFile({ parserType: "html-dashboard", projectCode, reportMonth, reportDate });
@@ -38,7 +45,7 @@ export async function parseSourceFile(filePath: string, originalName = filePath)
   }
 
   const workbook = readWorkbook(buffer);
-  const parserType = inferParserType(originalName, workbook.SheetNames);
+  const parserType = options.parserType ?? inferParserType(originalName, workbook.SheetNames);
   let parsed = emptyParsedFile({ parserType, projectCode, reportMonth, reportDate });
   parsed.qualityIssues.push(...detectFormulaIssues(workbook));
 
@@ -49,6 +56,7 @@ export async function parseSourceFile(filePath: string, originalName = filePath)
   if (parserType === "inventory") parsed = parseInventory(workbook, parsed);
   if (parserType === "purchase") parsed = parsePurchase(workbook, parsed);
 
+  addParsedQualityChecks(parsed);
   parsed.summary.parserType = parserType;
   parsed.summary.projectCode = projectCode;
   parsed.summary.sheetNames = workbook.SheetNames;
@@ -56,4 +64,51 @@ export async function parseSourceFile(filePath: string, originalName = filePath)
   return parsed;
 }
 
-export type { ParsedFile, QualityIssue, ParserType } from "@/lib/parsers/types";
+function addParsedQualityChecks(parsed: ParsedFile) {
+  const rowGroups = [
+    ...parsed.managementReportRows,
+    ...parsed.salesDailyRows,
+    ...parsed.promotionDailyRows,
+    ...parsed.inventorySkuRows,
+    ...parsed.purchaseRows
+  ];
+  let emptyFieldCount = 0;
+  for (const row of rowGroups) {
+    const rawRow = row.rawRow;
+    if (!rawRow || typeof rawRow !== "object" || Array.isArray(rawRow)) continue;
+    for (const [field, value] of Object.entries(rawRow)) {
+      if (value === null || value === undefined || String(value).trim() === "") {
+        emptyFieldCount += 1;
+        if (emptyFieldCount <= 50) {
+          parsed.qualityIssues.push({
+            code: "EMPTY_FIELD",
+            severity: "yellow",
+            message: "源表存在空字段，确认入库前请检查是否为正常留空。",
+            field
+          });
+        }
+      }
+    }
+  }
+  if (emptyFieldCount > 0) parsed.summary.emptyFieldCount = emptyFieldCount;
+
+  const dateCounts = new Map<string, number>();
+  for (const row of [...parsed.salesDailyRows, ...parsed.promotionDailyRows, ...parsed.inventorySkuRows, ...parsed.purchaseRows]) {
+    const value = row.reportDate;
+    if (!(value instanceof Date)) continue;
+    const key = value.toISOString().slice(0, 10);
+    dateCounts.set(key, (dateCounts.get(key) ?? 0) + 1);
+  }
+  for (const [date, count] of dateCounts) {
+    if (count > 1) {
+      parsed.qualityIssues.push({
+        code: "DUPLICATE_DATE",
+        severity: "orange",
+        message: `源表中日期 ${date} 出现 ${count} 行，请确认是否为多渠道/多商品明细还是重复上传。`,
+        value: date
+      });
+    }
+  }
+}
+
+export type { ParsedFile, QualityIssue, ParserType, ExcelParserType } from "@/lib/parsers/types";

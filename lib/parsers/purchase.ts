@@ -33,3 +33,5 @@ export function parsePurchase(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   parsed.summary.purchase = { rows: parsed.purchaseRows.length };
   return parsed;
 }
+
+export const purchaseLedgerParser = parsePurchase;
