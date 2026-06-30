@@ -39,16 +39,16 @@ const typeLabels: Record<string, string> = {
   slow_moving: "滞销预警",
   no_sales: "不动销预警",
   sales_target: "渠道销售目标预警",
-  promotion_roi: "推广ROI预警",
-  data_quality: "数据质量预警"
+  promotion_roi: "推广ROI预警"
 };
 
 async function getAlertData(searchParams: AlertsPageProps["searchParams"]) {
   try {
     const where = {
+      alertType: { not: "data_quality" },
       ...(searchParams?.projectId ? { projectId: searchParams.projectId } : {}),
       ...(searchParams?.severity ? { severity: searchParams.severity } : {}),
-      ...(searchParams?.alertType ? { alertType: searchParams.alertType } : {}),
+      ...(searchParams?.alertType && searchParams.alertType !== "data_quality" ? { alertType: searchParams.alertType } : {}),
       ...(searchParams?.ownerName ? { ownerName: searchParams.ownerName } : {}),
       ...(searchParams?.status ? { status: searchParams.status } : {})
     };
@@ -61,13 +61,13 @@ async function getAlertData(searchParams: AlertsPageProps["searchParams"]) {
       }),
       prisma.project.findMany({ orderBy: { code: "asc" } }),
       prisma.alertEvent.findMany({
-        where: { ownerName: { not: null } },
+        where: { ownerName: { not: null }, alertType: { not: "data_quality" } },
         distinct: ["ownerName"],
         select: { ownerName: true },
         orderBy: { ownerName: "asc" }
       }),
       searchParams?.alertId
-        ? prisma.alertEvent.findUnique({ where: { id: searchParams.alertId }, include: { project: true, rule: true } })
+        ? prisma.alertEvent.findFirst({ where: { id: searchParams.alertId, alertType: { not: "data_quality" } }, include: { project: true, rule: true } })
         : null
     ]);
     return { alerts, projects, owners: owners.map((item) => item.ownerName).filter(Boolean) as string[], selected };

@@ -1,6 +1,6 @@
 import type { AlertRule, AlertSeverity, Prisma } from "@prisma/client";
 import { parseNumber, todayUtcDate } from "@/lib/utils";
-import type { ParsedFile, QualityIssue } from "@/lib/parsers";
+import type { ParsedFile } from "@/lib/parsers";
 
 export type AlertCandidate = {
   code: string;
@@ -44,19 +44,13 @@ export const defaultAlertRules: RuleSeed[] = [
   rule("sku_turnover_days_gt_120", "slow_moving", "滞销预警", "orange", "turnoverDays", "gt", 120, "SKU周转天数高于滞销阈值。", "运营", "标记滞销SKU，评估清仓、换赠品、渠道转移或停止采购。", "商品日报/库存明细"),
   rule("sku_no_sales_30d", "no_sales", "不动销预警", "orange", "sales30d", "eq", 0, "SKU近30天销量为0且库存金额超过阈值。", "运营", "核查商品状态、页面曝光和库存可售性，制定去化动作。", "商品日报/库存明细"),
   rule("sales_completion_rate_low", "sales_target", "渠道销售目标预警", "orange", "completionRate", "lt", 0.6, "销售完成率低于阈值。", "运营", "拆解渠道缺口，调整投放、直播、活动和货盘。", "销售日报"),
-  rule("promotion_roi_low", "promotion_roi", "推广ROI预警", "yellow", "roi", "lt", 1.5, "推广ROI低于目标阈值。", "运营", "暂停低效计划，复核素材、人群、出价和转化链路。", "推广日报"),
-  rule("data_quality", "data_quality", "数据质量预警", "red", "qualityIssueCount", "gt", 0, "源文件存在公式错误、空字段、缺字段或重复日期。", "数据", "退回数据源修正公式和缺失字段，重新上传确认版本。", "上传解析预览")
+  rule("promotion_roi_low", "promotion_roi", "推广ROI预警", "yellow", "roi", "lt", 1.5, "推广ROI低于目标阈值。", "运营", "暂停低效计划，复核素材、人群、出价和转化链路。", "推广日报")
 ];
 
 export async function evaluateParsedFile(parsed: ParsedFile, rules: AlertRule[] = []): Promise<AlertCandidate[]> {
   const activeRules = rules.length ? rules : defaultAlertRules.map((item) => item as unknown as AlertRule);
   const byCode = new Map(activeRules.filter((item) => item.isActive !== false).map((item) => [item.code, item]));
   const alerts: AlertCandidate[] = [];
-
-  const qualityRule = byCode.get("data_quality");
-  if (qualityRule) {
-    for (const issue of parsed.qualityIssues.slice(0, 80)) alerts.push(fromQualityIssue(issue, qualityRule));
-  }
 
   const finance = parsed.financeSnapshots[0];
   maybeAdd(alerts, byCode.get("cash_support_days_lt_30"), parseNumber(parsed.cashflowSnapshots[0]?.supportDays), "现金流预警", "现金流可支撑天数低于规则阈值。");
@@ -125,26 +119,6 @@ function candidate(ruleItem: AlertRule, title: string, reason: string, value?: n
     sourceLabel: config.sourceLabel ?? "已确认入库数据",
     ownerName: config.ownerName ?? null,
     payload
-  };
-}
-
-function fromQualityIssue(issue: QualityIssue, ruleItem: AlertRule): AlertCandidate {
-  const config = (ruleItem.config ?? {}) as { ownerName?: string; suggestion?: string; sourceLabel?: string };
-  return {
-    code: ruleItem.code,
-    alertType: ruleItem.alertType,
-    alertRuleId: "id" in ruleItem ? ruleItem.id : null,
-    severity: issue.severity === "info" ? "yellow" : (issue.severity as AlertSeverity),
-    title: "数据质量预警",
-    message: issue.sheet || issue.cell ? `${issue.message}（${issue.sheet ?? ""} ${issue.cell ?? ""}）` : issue.message,
-    metric: ruleItem.metric,
-    metricValue: 1,
-    threshold: threshold(ruleItem),
-    reason: issue.message,
-    suggestion: config.suggestion ?? "请修复源文件后重新上传确认版本。",
-    sourceLabel: config.sourceLabel ?? "上传解析预览",
-    ownerName: config.ownerName ?? null,
-    payload: { issue }
   };
 }
 

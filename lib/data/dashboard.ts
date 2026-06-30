@@ -104,7 +104,7 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
       orderBy: { reportDate: "desc" }
     }),
-    prisma.alertEvent.count({ where: { projectId: project.id, status: "open" } })
+    prisma.alertEvent.count({ where: { projectId: project.id, status: "open", alertType: { not: "data_quality" } } })
   ]);
 
   const target = toNumber(completion._sum.gmvTarget);
@@ -188,7 +188,7 @@ export async function getProjectDashboard(projectId: string): Promise<ProjectDas
       take: 12
     }),
     prisma.alertEvent.findMany({
-      where: { projectId: project.id, status: "open" },
+      where: { projectId: project.id, status: "open", alertType: { not: "data_quality" } },
       orderBy: [{ severity: "asc" }, { createdAt: "desc" }],
       take: 8
     }),

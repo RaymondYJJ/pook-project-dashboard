@@ -86,6 +86,11 @@ async function main() {
       });
     }
   }
+
+  await prisma.alertRule.updateMany({
+    where: { code: "data_quality" },
+    data: { isActive: false, description: "数据质量问题仅在上传解析预览中展示，不进入管理层预警中心。" }
+  });
 }
 
 main()
