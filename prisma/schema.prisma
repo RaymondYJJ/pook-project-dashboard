@@ -42,6 +42,7 @@ enum AlertSeverity {
   red
   orange
   yellow
+  green
   info
 }
 
@@ -49,6 +50,7 @@ enum AlertStatus {
   open
   acknowledged
   resolved
+  ignored
 }
 
 model User {
@@ -517,6 +519,7 @@ model AlertRule {
   id          String        @id @default(cuid())
   projectId   String?       @map("project_id")
   code        String
+  alertType   String        @default("data_quality") @map("alert_type")
   name        String
   description String?
   severity    AlertSeverity
@@ -543,11 +546,19 @@ model AlertEvent {
   reportDate    DateTime      @map("report_date") @db.Date
   sourceFileId  String?       @map("source_file_id")
   uploadBatchId String?       @map("upload_batch_id")
+  alertType     String        @default("data_quality") @map("alert_type")
   severity      AlertSeverity
   status        AlertStatus   @default(open)
   title         String
   message       String
+  metric        String?
   metricValue   Decimal?      @map("metric_value") @db.Decimal(18, 4)
+  threshold     Decimal?      @db.Decimal(18, 4)
+  reason        String?
+  suggestion    String?
+  sourceLabel   String?       @map("source_label")
+  ownerName     String?       @map("owner_name")
+  handlingNote  String?       @map("handling_note")
   payload       Json?
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")

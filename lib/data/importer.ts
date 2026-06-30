@@ -152,7 +152,7 @@ export async function confirmUploadBatch(batchId: string, userId?: string | null
         metadata: toJson({ sourceFileId: sourceFile.id, reportType, version: sourceFile.version })
       }
     });
-  });
+  }, { timeout: 30000 });
   return { batchId: batch.id, sourceFileId: sourceFile.id };
 }
 
@@ -195,7 +195,7 @@ export async function rollbackToUploadBatch(batchId: string, userId?: string | n
         metadata: toJson({ sourceFileId: sourceFile.id, reportType, version: sourceFile.version })
       }
     });
-  });
+  }, { timeout: 30000 });
 }
 
 export async function parseAndImportFile(filePath: string, originalName: string, userId?: string | null) {
@@ -270,23 +270,38 @@ async function persistParsed(projectId: string, uploadBatchId: string, sourceFil
     await createManyChunked(tx.inventorySnapshot, parsed.inventorySnapshots.map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
     await createManyChunked(tx.inventorySkuRow, parsed.inventorySkuRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
     await createManyChunked(tx.purchaseRow, parsed.purchaseRows.slice(0, 5000).map((row) => attachDate(row, projectId, sourceFileId, uploadBatchId, reportDate)));
+    const rules = await tx.alertRule.findMany({
+      where: {
+        isActive: true,
+        OR: [{ projectId }, { projectId: null }]
+      }
+    });
+    const alerts = await evaluateParsedFile(parsed, rules);
     await createManyChunked(
       tx.alertEvent,
-      evaluateParsedFile(parsed).map((alert) => ({
+      alerts.map((alert) => ({
         projectId,
+        alertRuleId: alert.alertRuleId ?? undefined,
         reportDate: alertReportDate(),
         sourceFileId,
         uploadBatchId,
+        alertType: alert.alertType,
         severity: alert.severity,
         title: alert.title,
         message: alert.message,
+        metric: alert.metric,
         metricValue: alert.metricValue ?? undefined,
+        threshold: alert.threshold ?? undefined,
+        reason: alert.reason,
+        suggestion: alert.suggestion,
+        sourceLabel: alert.sourceLabel,
+        ownerName: alert.ownerName ?? undefined,
         payload: toJson(alert.payload ?? {})
       }))
     );
   };
   if (txClient) await runner(txClient);
-  else await prisma.$transaction(runner);
+  else await prisma.$transaction(runner, { timeout: 30000 });
 }
 
 async function createManyChunked(model: { createMany: (args: { data: any[] }) => Promise<unknown> }, rows: Record<string, unknown>[]) {

@@ -76,14 +76,17 @@ function applyPendingCompatibilityMigrations() {
     .map((name) => path.join(migrationsDir, name, "migration.sql"))
     .filter((migrationPath) => migrationPath !== initMigrationPath && existsSync(migrationPath));
 
-  if (!hasColumn("source_files", "is_active_version")) {
-    for (const migrationPath of migrations) {
-      console.log(`Applying compatibility migration ${path.basename(path.dirname(migrationPath))}...`);
+  const needsUploadMigration = !hasColumn("source_files", "is_active_version");
+  const needsAlertMigration = !hasColumn("alert_events", "alert_type");
+  for (const migrationPath of migrations) {
+    const name = path.basename(path.dirname(migrationPath));
+    const shouldApply = (needsUploadMigration && name.includes("upload_preview_versions")) || (needsAlertMigration && name.includes("alert_center_workflow"));
+    if (shouldApply) {
+      console.log(`Applying compatibility migration ${name}...`);
       applyMigration(migrationPath);
     }
-  } else {
-    console.log("Upload preview/version schema already exists; skipping compatibility migrations.");
   }
+  if (!needsUploadMigration && !needsAlertMigration) console.log("Compatibility migrations already applied.");
 }
 
 async function main() {

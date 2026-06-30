@@ -62,21 +62,26 @@ async function main() {
       await prisma.alertRule.upsert({
         where: { projectId_code: { projectId: project.id, code: rule.code } },
         update: {
+          alertType: rule.alertType,
           name: rule.name,
+          description: rule.description,
           severity: rule.severity,
           metric: rule.metric,
           operator: rule.operator,
-          threshold: rule.threshold
+          threshold: rule.threshold,
+          config: rule.config
         },
         create: {
           projectId: project.id,
           code: rule.code,
+          alertType: rule.alertType,
           name: rule.name,
           severity: rule.severity,
           metric: rule.metric,
           operator: rule.operator,
           threshold: rule.threshold,
-          description: "V1 默认规则，可在后台调整。"
+          description: rule.description,
+          config: rule.config
         }
       });
     }
