@@ -52,6 +52,14 @@ npm run db:up
 npm run setup:local
 ```
 
+`setup:local` 会自动执行：
+
+- `prisma generate`
+- `docker compose up -d db`
+- 等待 PostgreSQL ready
+- 首次运行时执行 `prisma/migrations/20260629000000_init/migration.sql`
+- 写入默认角色、项目、管理员和预警规则
+
 5. 启动开发服务器
 
 ```bash
