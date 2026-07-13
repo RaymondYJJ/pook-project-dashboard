@@ -3,7 +3,9 @@ import * as XLSX from "xlsx";
 import { describe, expect, it } from "vitest";
 import { parseSourceFile } from "@/lib/parsers";
 import { parseFinance } from "@/lib/parsers/finance";
+import { parsePromotion } from "@/lib/parsers/promotion";
 import { parsePurchase } from "@/lib/parsers/purchase";
+import { parseSales } from "@/lib/parsers/sales";
 import { emptyParsedFile } from "@/lib/parsers/types";
 
 const samples = path.join(process.cwd(), "sample-files");
@@ -85,5 +87,45 @@ describe("sample parsers", () => {
     expect(parsed.purchaseRows).toHaveLength(1);
     expect(parsed.purchaseRows[0].remainingQuantity).toBe(960);
     expect(parsed.purchaseRows[0].consumableAmount).toBe(1000);
+  });
+
+  it("parses operation and customer service daily sales aliases", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["日期", "店铺名称", "访客数", "浏览量", "成交金额", "订单数", "客单价", "成交转化率"],
+        ["2026-06-29", "绿雪芽天猫旗舰店", "1200", "3600", "58000", "320", "181.25", "26.67%"]
+      ]),
+      "天猫运营日报"
+    );
+
+    const parsed = parseSales(workbook, emptyParsedFile({ parserType: "sales", projectCode: "luxueya", reportMonth: new Date("2026-06-01"), reportDate: new Date("2026-06-29") }));
+
+    expect(parsed.salesDailyRows).toHaveLength(1);
+    expect(parsed.salesDailyRows[0].store).toBe("绿雪芽天猫旗舰店");
+    expect(parsed.salesDailyRows[0].paymentAmount).toBe(58000);
+    expect(parsed.salesDailyRows[0].paidBuyers).toBe(320);
+    expect(parsed.salesDailyRows[0].conversionRate).toBeCloseTo(0.2667, 4);
+  });
+
+  it("parses promotion daily aliases from channel sheets", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["日期", "计划名称", "消耗", "曝光", "点击", "成交GMV", "投产比", "平均点击花费"],
+        ["2026-06-29", "京东自营核心计划", "3600", "180000", "4200", "46800", "13", "0.86"]
+      ]),
+      "京东自营推广日报"
+    );
+
+    const parsed = parsePromotion(workbook, emptyParsedFile({ parserType: "promotion", projectCode: "luxueya", reportMonth: new Date("2026-06-01"), reportDate: new Date("2026-06-29") }));
+
+    expect(parsed.promotionDailyRows).toHaveLength(1);
+    expect(parsed.promotionDailyRows[0].campaign).toBe("京东自营核心计划");
+    expect(parsed.promotionDailyRows[0].spend).toBe(3600);
+    expect(parsed.promotionDailyRows[0].transactionAmount).toBe(46800);
+    expect(parsed.promotionDailyRows[0].roi).toBe(13);
   });
 });
