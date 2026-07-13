@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell, PageHeader, Card, StatusPill } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
-import { getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 type UploadsPageProps = {
   searchParams?: {
@@ -12,6 +12,10 @@ type UploadsPageProps = {
     uploaded?: string;
     failed?: string;
     batchIds?: string;
+    project?: string;
+    group?: string;
+    status?: string;
+    q?: string;
   };
 };
 
@@ -35,7 +39,7 @@ async function getUploads() {
   try {
     return await prisma.uploadBatch.findMany({
       orderBy: { createdAt: "desc" },
-      take: 30,
+      take: 100,
       include: { project: true, sourceFiles: true }
     });
   } catch {
@@ -71,6 +75,27 @@ async function getBatchesByIds(batchIds: string[]) {
 export default async function UploadsPage({ searchParams }: UploadsPageProps) {
   const uploadedBatchIds = parseUploadBatchIds(searchParams?.batchIds);
   const [files, selectedBatch, uploadedBatches] = await Promise.all([getUploads(), getSelectedBatch(searchParams?.batchId), getBatchesByIds(uploadedBatchIds)]);
+  const historyRows = files.map((batch) => {
+    const sourceFile = batch.sourceFiles[0];
+    const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+    return {
+      id: batch.id,
+      batch,
+      sourceFile,
+      parseSummary,
+      reportType: String(batch.reportType ?? parseSummary?.reportType ?? ""),
+      projectCode: batch.project?.code ?? null,
+      fileName: sourceFile?.originalName ?? "",
+      status: batch.status,
+      active: Boolean(batch.activeAt)
+    };
+  });
+  const filteredRows = filterUploadBatches(historyRows, {
+    projectCode: searchParams?.project,
+    group: searchParams?.group,
+    status: searchParams?.status,
+    query: searchParams?.q
+  });
   const preview = selectedBatch?.preview as Record<string, unknown> | null;
   const selectedSourceFile = selectedBatch?.sourceFiles[0];
   const selectedReportType = String(selectedBatch?.reportType ?? preview?.reportType ?? "");
@@ -84,14 +109,9 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
   const groupedFiles = getUploadBusinessGroups()
     .map((group) => ({
       group,
-      batches: files.filter((batch) => {
-        const sourceFile = batch.sourceFiles[0];
-        const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
-        const reportType = String(batch.reportType ?? parseSummary?.reportType ?? "");
-        return getUploadBusinessGroup(reportType, sourceFile?.originalName ?? "").key === group.key;
-      })
+      rows: filteredRows.filter((row) => getUploadBusinessGroup(row.reportType, row.fileName).key === group.key)
     }))
-    .filter((item) => item.batches.length > 0);
+    .filter((item) => item.rows.length > 0);
   const confirmableUploadedBatchIds = getConfirmableUploadBatchIds(uploadedBatches);
 
   return (
@@ -245,21 +265,52 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             <h2 className="text-base font-semibold text-ink">上传版本</h2>
             <p className="mt-1 text-xs text-slate-500">按资金财务、经营销售、推广投放、库存采购和资料留存自动分组。</p>
           </div>
-          {files.length ? <span className="text-xs text-slate-500">最近 {files.length} 个上传版本</span> : null}
+          {files.length ? <span className="text-xs text-slate-500">显示 {filteredRows.length} / 最近 {files.length} 个上传版本</span> : null}
         </div>
+        <form action="/uploads" className="mb-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_1.5fr_auto_auto] md:items-end">
+          <label className="grid gap-1 text-xs font-medium text-slate-600">
+            项目
+            <select name="project" defaultValue={searchParams?.project ?? "all"} className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
+              <option value="all">全部项目</option>
+              <option value="taiyue">太樾</option>
+              <option value="luxueya">绿雪芽</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">
+            业务分组
+            <select name="group" defaultValue={searchParams?.group ?? "all"} className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
+              <option value="all">全部分组</option>
+              {getUploadBusinessGroups().map((group) => <option key={group.key} value={group.key}>{group.label}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">
+            状态
+            <select name="status" defaultValue={searchParams?.status ?? "all"} className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
+              <option value="all">全部状态</option>
+              <option value="parsed">待确认</option>
+              <option value="imported">已入库</option>
+              <option value="active">当前版本</option>
+              <option value="failed">失败</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">
+            文件名
+            <input name="q" defaultValue={searchParams?.q ?? ""} placeholder="搜索文件名" className="rounded border border-slate-300 bg-white px-2 py-2 text-sm" />
+          </label>
+          <button className="rounded bg-navy px-4 py-2 text-sm font-medium text-white">筛选</button>
+          <Link href="/uploads" className="rounded border border-slate-300 px-4 py-2 text-center text-sm font-medium text-slate-700">清除</Link>
+        </form>
         {groupedFiles.length ? (
           <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-            {groupedFiles.map(({ group, batches }) => {
-              const rowCount = batches.reduce((sum, batch) => {
-                const sourceFile = batch.sourceFiles[0];
-                const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
-                return sum + summarizeUploadPreview(parseSummary as { rowCounts?: Record<string, number>; qualityIssueCount?: number } | null).rowCount;
+            {groupedFiles.map(({ group, rows }) => {
+              const rowCount = rows.reduce((sum, row) => {
+                return sum + summarizeUploadPreview(row.parseSummary as { rowCounts?: Record<string, number>; qualityIssueCount?: number } | null).rowCount;
               }, 0);
               return (
                 <div key={group.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                   <div className="text-sm font-semibold text-ink">{group.label}</div>
                   <div className="mt-1 text-xs leading-5 text-slate-500">{group.description}</div>
-                  <div className="mt-3 text-xs text-slate-600">{batches.length} 个文件 · {rowCount.toLocaleString("zh-CN")} 行</div>
+                  <div className="mt-3 text-xs text-slate-600">{rows.length} 个文件 · {rowCount.toLocaleString("zh-CN")} 行</div>
                 </div>
               );
             })}
@@ -271,11 +322,8 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
               <tr><th className="py-2">文件</th><th>业务分组</th><th>项目</th><th>类型</th><th>日期/月</th><th>版本</th><th>状态</th><th>质量</th><th>操作</th></tr>
             </thead>
             <tbody>
-              {files.map((batch) => {
-                const sourceFile = batch.sourceFiles[0];
-                const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
-                const reportType = String(batch.reportType ?? parseSummary?.reportType ?? "");
-                const group = getUploadBusinessGroup(reportType, sourceFile?.originalName ?? "");
+              {filteredRows.map(({ batch, sourceFile, parseSummary, reportType, fileName }) => {
+                const group = getUploadBusinessGroup(reportType, fileName);
                 const qualityCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number(parseSummary?.qualityIssueCount ?? 0);
                 return (
                   <tr key={batch.id} className="border-t">
@@ -294,6 +342,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                 );
               })}
               {!files.length ? <tr><td className="py-6 text-slate-500" colSpan={9}>暂无上传记录，或数据库尚未连接。</td></tr> : null}
+              {files.length && !filteredRows.length ? <tr><td className="py-6 text-slate-500" colSpan={9}>没有符合筛选条件的上传版本。</td></tr> : null}
             </tbody>
           </table>
         </div>

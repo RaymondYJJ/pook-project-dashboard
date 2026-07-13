@@ -18,6 +18,19 @@ export type UploadBatchLike = {
   reportType?: string | null;
 };
 
+export type UploadFilterBatchLike = UploadBatchLike & {
+  active?: boolean | null;
+  fileName?: string | null;
+  projectCode?: string | null;
+};
+
+export type UploadFilters = {
+  projectCode?: string | null;
+  group?: string | null;
+  status?: string | null;
+  query?: string | null;
+};
+
 export type BatchConfirmFailure = {
   id: string;
   message: string;
@@ -106,4 +119,24 @@ export function buildBatchConfirmRedirectParams(result: { imported: string[]; fa
     params.set("error", result.failed.map((item) => `${item.id}: ${item.message}`).join("；").slice(0, 500));
   }
   return params;
+}
+
+export function filterUploadBatches<T extends UploadFilterBatchLike>(batches: T[], filters: UploadFilters) {
+  const projectCode = cleanFilter(filters.projectCode);
+  const group = cleanFilter(filters.group);
+  const status = cleanFilter(filters.status);
+  const query = cleanFilter(filters.query)?.toLowerCase();
+  return batches.filter((batch) => {
+    if (projectCode && batch.projectCode !== projectCode) return false;
+    if (group && getUploadBusinessGroup(batch.reportType, batch.fileName ?? "").key !== group) return false;
+    if (status === "active" && !batch.active) return false;
+    if (status && status !== "active" && batch.status !== status) return false;
+    if (query && !(batch.fileName ?? "").toLowerCase().includes(query)) return false;
+    return true;
+  });
+}
+
+function cleanFilter(value?: string | null) {
+  const cleaned = String(value ?? "").trim();
+  return cleaned && cleaned !== "all" ? cleaned : null;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBatchConfirmRedirectParams, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { buildBatchConfirmRedirectParams, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 describe("upload preview grouping", () => {
   it("groups high-frequency upload files by business purpose", () => {
@@ -56,5 +56,17 @@ describe("upload preview grouping", () => {
     expect(params.get("confirmed")).toBe("2");
     expect(params.get("failed")).toBe("1");
     expect(params.get("error")).toContain("promotion-1");
+  });
+
+  it("filters upload batches by project group status and keyword", () => {
+    const batches = [
+      { id: "1", projectCode: "luxueya", reportType: "finance", status: "imported", active: true, fileName: "佰茶绿雪芽资金收支一览表2026年6月.xlsx" },
+      { id: "2", projectCode: "luxueya", reportType: "promotion", status: "parsed", active: false, fileName: "绿雪芽京东POP推广日报6.29.xlsx" },
+      { id: "3", projectCode: "taiyue", reportType: "sales", status: "failed", active: false, fileName: "太樾电商销售日报6.22.xlsx" }
+    ];
+
+    expect(filterUploadBatches(batches, { projectCode: "luxueya", group: "marketing" }).map((batch) => batch.id)).toEqual(["2"]);
+    expect(filterUploadBatches(batches, { status: "active" }).map((batch) => batch.id)).toEqual(["1"]);
+    expect(filterUploadBatches(batches, { query: "销售" }).map((batch) => batch.id)).toEqual(["3"]);
   });
 });
