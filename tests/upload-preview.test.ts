@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { buildBatchConfirmRedirectParams, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 describe("upload preview grouping", () => {
   it("groups high-frequency upload files by business purpose", () => {
@@ -41,5 +41,20 @@ describe("upload preview grouping", () => {
         { id: "sales-1", status: "parsed", reportType: "sales" }
       ])
     ).toEqual(["finance-1", "sales-1"]);
+  });
+
+  it("builds partial batch confirm redirect params", () => {
+    const params = buildBatchConfirmRedirectParams({
+      imported: ["finance-1", "sales-1"],
+      failed: [
+        { id: "promotion-1", message: "missing sheet" }
+      ]
+    });
+
+    expect(params.get("batchId")).toBe("finance-1");
+    expect(params.get("batchIds")).toBe("finance-1,sales-1");
+    expect(params.get("confirmed")).toBe("2");
+    expect(params.get("failed")).toBe("1");
+    expect(params.get("error")).toContain("promotion-1");
   });
 });

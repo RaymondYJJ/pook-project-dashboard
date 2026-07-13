@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth/session";
 import { confirmUploadBatch } from "@/lib/data/importer";
-import { parseUploadBatchIds, serializeUploadBatchIds } from "@/lib/uploads/preview";
+import { buildBatchConfirmRedirectParams, parseUploadBatchIds } from "@/lib/uploads/preview";
 
 export const runtime = "nodejs";
 
@@ -12,20 +12,17 @@ export async function POST(request: Request) {
   const batchIds = parseUploadBatchIds(String(form.get("batchIds") ?? batchId));
   if (!batchIds.length) return NextResponse.redirect(new URL("/uploads?error=missing_batch", request.url), 303);
 
-  try {
-    const imported: string[] = [];
-    for (const id of batchIds) {
+  const imported: string[] = [];
+  const failed: { id: string; message: string }[] = [];
+  for (const id of batchIds) {
+    try {
       await confirmUploadBatch(id, session?.userId);
       imported.push(id);
+    } catch (error) {
+      failed.push({ id, message: error instanceof Error ? error.message : String(error) });
     }
-    const params = new URLSearchParams({
-      batchId: imported[0],
-      confirmed: String(imported.length)
-    });
-    if (imported.length > 1) params.set("batchIds", serializeUploadBatchIds(imported));
-    return NextResponse.redirect(new URL(`/uploads?${params.toString()}`, request.url), 303);
-  } catch (error) {
-    const message = encodeURIComponent(error instanceof Error ? error.message : String(error));
-    return NextResponse.redirect(new URL(`/uploads?batchId=${batchIds[0]}&error=${message}`, request.url), 303);
   }
+  const params = buildBatchConfirmRedirectParams({ imported, failed });
+  if (!imported.length && !failed.length) params.set("error", "no_batches_confirmed");
+  return NextResponse.redirect(new URL(`/uploads?${params.toString()}`, request.url), 303);
 }

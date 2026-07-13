@@ -99,9 +99,12 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
       <PageHeader title="数据上传中心" description="Excel 上传、解析预览、确认入库、历史版本与回滚" />
 
       {searchParams?.error ? (
-        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{decodeURIComponent(searchParams.error)}</div>
+        <div className="mb-5 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {searchParams?.failed ? `有 ${searchParams.failed} 个文件确认失败：` : ""}
+          {decodeURIComponent(searchParams.error)}
+        </div>
       ) : null}
-      {searchParams?.confirmed ? <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">已确认入库，看板会读取该日期的最新确认版本。</div> : null}
+      {searchParams?.confirmed ? <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">已确认 {searchParams.confirmed} 个文件入库，看板会读取该日期的最新确认版本。</div> : null}
       {searchParams?.rolledBack ? <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">已回滚并激活选中的历史版本。</div> : null}
       {searchParams?.uploaded ? <div className="mb-5 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">已完成 {searchParams.uploaded} 个文件的自动识别预览{searchParams.failed ? `，${searchParams.failed} 个文件失败` : ""}。</div> : null}
 

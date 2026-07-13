@@ -18,6 +18,11 @@ export type UploadBatchLike = {
   reportType?: string | null;
 };
 
+export type BatchConfirmFailure = {
+  id: string;
+  message: string;
+};
+
 const groups: Record<UploadBusinessGroupKey, UploadBusinessGroup> = {
   finance: {
     key: "finance",
@@ -85,4 +90,20 @@ export function parseUploadBatchIds(value?: string | string[] | null) {
 
 export function getConfirmableUploadBatchIds(batches: UploadBatchLike[]) {
   return batches.filter((batch) => batch.status === "parsed" && Boolean(batch.reportType)).map((batch) => batch.id);
+}
+
+export function buildBatchConfirmRedirectParams(result: { imported: string[]; failed: BatchConfirmFailure[] }) {
+  const params = new URLSearchParams();
+  if (result.imported.length) {
+    params.set("batchId", result.imported[0]);
+    params.set("confirmed", String(result.imported.length));
+    params.set("batchIds", serializeUploadBatchIds(result.imported));
+  } else if (result.failed[0]) {
+    params.set("batchId", result.failed[0].id);
+  }
+  if (result.failed.length) {
+    params.set("failed", String(result.failed.length));
+    params.set("error", result.failed.map((item) => `${item.id}: ${item.message}`).join("；").slice(0, 500));
+  }
+  return params;
 }
