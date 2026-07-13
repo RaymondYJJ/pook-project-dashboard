@@ -1,6 +1,6 @@
 import { monthStart, parseNumber } from "@/lib/utils";
 import type { ParsedFile } from "@/lib/parsers/types";
-import { findCellValue, firstSheetMatching, sheetObjects, sheetRows } from "@/lib/parsers/workbook";
+import { findCellValue, findHeaderRow, firstSheetMatching, rowNumber, rowValue, sheetObjects, sheetRows } from "@/lib/parsers/workbook";
 import type * as XLSX from "xlsx";
 
 export function parseFinance(workbook: XLSX.WorkBook, parsed: ParsedFile) {
@@ -9,6 +9,9 @@ export function parseFinance(workbook: XLSX.WorkBook, parsed: ParsedFile) {
   const cashflowSheet = firstSheetMatching(workbook, /现金流量表/);
   const ledgerSheet = firstSheetMatching(workbook, /科余表/);
   const paymentSheet = firstSheetMatching(workbook, /支付明细/);
+  const bankFlowSheet = firstSheetMatching(workbook, /银行流水/);
+  const sapPayableSheet = firstSheetMatching(workbook, /SAP应付余额|应付余额/);
+  const fundFlowSheet = firstSheetMatching(workbook, /资金收支情况一览|资金收支/);
 
   if (balanceSheet) {
     const rows = sheetRows(workbook, balanceSheet, 120);
@@ -101,6 +104,109 @@ export function parseFinance(workbook: XLSX.WorkBook, parsed: ParsedFile) {
           rawRow: row
         });
       }
+    }
+  }
+
+  if (bankFlowSheet) {
+    const rows = sheetRows(workbook, bankFlowSheet, 5000);
+    const debitTotal = findCellValue(rows, /累计借金额/);
+    const creditTotal = findCellValue(rows, /累计贷金额/);
+    const endingCash = findCellValue(rows, /对账单余额/);
+    Object.assign(parsed.financeSnapshots[0] ?? (parsed.financeSnapshots[0] = {}), {
+      monetaryFunds: endingCash,
+      endingCash,
+      rawMetrics: {
+        ...((parsed.financeSnapshots[0]?.rawMetrics as Record<string, unknown> | undefined) ?? {}),
+        bankFlow: { sheet: bankFlowSheet, debitTotal, creditTotal, endingCash }
+      }
+    });
+    Object.assign(parsed.cashflowSnapshots[0] ?? (parsed.cashflowSnapshots[0] = {}), {
+      cashInflow: creditTotal,
+      cashOutflow: debitTotal,
+      endingCash,
+      rawMetrics: {
+        ...((parsed.cashflowSnapshots[0]?.rawMetrics as Record<string, unknown> | undefined) ?? {}),
+        bankFlow: { sheet: bankFlowSheet }
+      }
+    });
+
+    const headerIndex = rows.findIndex((row) => row.some((cell) => /交易日|交易日期|记账日/.test(String(cell ?? ""))));
+    if (headerIndex >= 0) {
+      for (const row of sheetObjects(workbook, bankFlowSheet, headerIndex, 3000)) {
+        const date = rowValue(row, ["交易日", "交易日期", "记账日", "日期"]);
+        if (!date) continue;
+        parsed.paymentTransactions.push({
+          reportDate: date,
+          accountName: rowValue(row, ["账号名称", "账户名称", "户名"]),
+          transactionType: rowValue(row, ["交易类型", "业务类型", "借贷标志"]),
+          debitAmount: rowNumber(row, ["借方金额", "支出", "付款", "借金额"]),
+          creditAmount: rowNumber(row, ["贷方金额", "收入", "收款", "贷金额"]),
+          balance: rowNumber(row, ["余额", "账户余额"]),
+          summary: rowValue(row, ["摘要", "用途", "备注"]),
+          counterparty: rowValue(row, ["收(付)方名称", "对方户名", "对手户名", "对方名称"]),
+          rawRow: row
+        });
+      }
+    }
+  }
+
+  if (sapPayableSheet) {
+    const rows = sheetRows(workbook, sapPayableSheet, 5000);
+    const headerIndex = findHeaderRow(rows, ["公司代码", "科目", "科目描述", "期末金额", "应付余额"]);
+    if (headerIndex >= 0) {
+      for (const row of sheetObjects(workbook, sapPayableSheet, headerIndex, 5000)) {
+        const subjectName = String(rowValue(row, ["科目描述", "科目名称"]) ?? "");
+        const endingAmount = rowNumber(row, ["应付余额", "期末金额"]);
+        if (!subjectName && endingAmount === null) continue;
+        parsed.receivablePayableItems.push({
+          itemType: "payable",
+          counterparty: rowValue(row, ["供应商描述", "供应商", "客户描述", "客户"]),
+          subjectCode: rowValue(row, ["科目"]),
+          subjectName,
+          endingAmount,
+          rawRow: row
+        });
+      }
+      const payables = parsed.receivablePayableItems
+        .filter((row) => row.itemType === "payable")
+        .reduce((sum, row) => sum + (Math.abs(Number(row.endingAmount)) || 0), 0);
+      if (payables > 0) Object.assign(parsed.financeSnapshots[0] ?? (parsed.financeSnapshots[0] = {}), { payables });
+    }
+  }
+
+  if (fundFlowSheet) {
+    const rows = sheetRows(workbook, fundFlowSheet, 5000);
+    const headerIndex = findHeaderRow(rows, ["店铺名称", "渠道", "期初余额", "本月收款", "本月付款", "期末余额"]);
+    if (headerIndex >= 0) {
+      let openingCash = 0;
+      let cashInflow = 0;
+      let cashOutflow = 0;
+      let endingCash = 0;
+      for (const row of sheetObjects(workbook, fundFlowSheet, headerIndex, 5000)) {
+        const name = rowValue(row, ["店铺名称", "账户", "科目"]);
+        if (!name) continue;
+        openingCash += rowNumber(row, ["期初余额"]) ?? 0;
+        cashInflow += (rowNumber(row, ["本月收款"]) ?? 0) + (rowNumber(row, ["本月提现收入"]) ?? 0);
+        cashOutflow += (rowNumber(row, ["本月付款"]) ?? 0) + (rowNumber(row, ["本月提现支出"]) ?? 0);
+        endingCash += rowNumber(row, ["期末余额", "期末余额（可用资金）"]) ?? 0;
+      }
+      Object.assign(parsed.financeSnapshots[0] ?? (parsed.financeSnapshots[0] = {}), {
+        monetaryFunds: endingCash || parsed.financeSnapshots[0]?.monetaryFunds,
+        endingCash: endingCash || parsed.financeSnapshots[0]?.endingCash,
+        rawMetrics: {
+          ...((parsed.financeSnapshots[0]?.rawMetrics as Record<string, unknown> | undefined) ?? {}),
+          fundFlow: { sheet: fundFlowSheet, openingCash, cashInflow, cashOutflow, endingCash }
+        }
+      });
+      Object.assign(parsed.cashflowSnapshots[0] ?? (parsed.cashflowSnapshots[0] = {}), {
+        cashInflow,
+        cashOutflow,
+        endingCash,
+        rawMetrics: {
+          ...((parsed.cashflowSnapshots[0]?.rawMetrics as Record<string, unknown> | undefined) ?? {}),
+          fundFlow: { sheet: fundFlowSheet, openingCash }
+        }
+      });
     }
   }
 
