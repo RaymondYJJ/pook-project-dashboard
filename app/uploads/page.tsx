@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell, PageHeader, Card, StatusPill } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
-import { getUploadBusinessGroup, getUploadBusinessGroups, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 type UploadsPageProps = {
   searchParams?: {
@@ -11,6 +11,7 @@ type UploadsPageProps = {
     rolledBack?: string;
     uploaded?: string;
     failed?: string;
+    batchIds?: string;
   };
 };
 
@@ -54,8 +55,22 @@ async function getSelectedBatch(batchId?: string) {
   }
 }
 
+async function getBatchesByIds(batchIds: string[]) {
+  if (!batchIds.length) return [];
+  try {
+    const batches = await prisma.uploadBatch.findMany({
+      where: { id: { in: batchIds } },
+      include: { project: true, sourceFiles: true }
+    });
+    return batches.sort((a, b) => batchIds.indexOf(a.id) - batchIds.indexOf(b.id));
+  } catch {
+    return [];
+  }
+}
+
 export default async function UploadsPage({ searchParams }: UploadsPageProps) {
-  const [files, selectedBatch] = await Promise.all([getUploads(), getSelectedBatch(searchParams?.batchId)]);
+  const uploadedBatchIds = parseUploadBatchIds(searchParams?.batchIds);
+  const [files, selectedBatch, uploadedBatches] = await Promise.all([getUploads(), getSelectedBatch(searchParams?.batchId), getBatchesByIds(uploadedBatchIds)]);
   const preview = selectedBatch?.preview as Record<string, unknown> | null;
   const selectedSourceFile = selectedBatch?.sourceFiles[0];
   const selectedReportType = String(selectedBatch?.reportType ?? preview?.reportType ?? "");
@@ -77,6 +92,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
       })
     }))
     .filter((item) => item.batches.length > 0);
+  const confirmableUploadedBatchIds = getConfirmableUploadBatchIds(uploadedBatches);
 
   return (
     <Shell>
@@ -106,6 +122,50 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
         </form>
         <p className="mt-3 text-xs leading-5 text-slate-500">系统会根据文件名和表格 sheet 自动识别报表类型、日期/月和数据维度。你只需要选择品牌/项目；无法入库的 HTML 或飞书快捷链接会作为外部报告资料留存。</p>
       </Card>
+
+      {uploadedBatches.length ? (
+        <Card className="mt-5">
+          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+            <div>
+              <h2 className="text-base font-semibold text-ink">本次上传</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                已识别 {uploadedBatches.length} 个文件，其中 {confirmableUploadedBatchIds.length} 个可确认入库；外部链接和解析失败文件会自动跳过。
+              </p>
+            </div>
+            {confirmableUploadedBatchIds.length ? (
+              <form action="/api/uploads/confirm" method="post">
+                <input type="hidden" name="batchIds" value={serializeUploadBatchIds(confirmableUploadedBatchIds)} />
+                <button className="rounded bg-pine px-4 py-2 text-sm font-medium text-white">一键确认可入库文件</button>
+              </form>
+            ) : null}
+          </div>
+          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {uploadedBatches.map((batch) => {
+              const sourceFile = batch.sourceFiles[0];
+              const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+              const reportType = String(batch.reportType ?? parseSummary?.reportType ?? "");
+              const group = getUploadBusinessGroup(reportType, sourceFile?.originalName ?? "");
+              const summary = summarizeUploadPreview(parseSummary as { rowCounts?: Record<string, number>; qualityIssueCount?: number } | null);
+              const confirmable = batch.status === "parsed" && Boolean(batch.reportType);
+              return (
+                <div key={batch.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="truncate text-sm font-medium text-ink">{sourceFile?.originalName ?? "-"}</div>
+                      <div className="mt-1 text-xs text-slate-500">{reportTypeLabels[reportType] ?? "资料留存"} · {summary.rowCount.toLocaleString("zh-CN")} 行</div>
+                    </div>
+                    <StatusPill tone={confirmable ? "green" : batch.status === "failed" ? "red" : "neutral"}>{confirmable ? "可入库" : statusLabel(batch.status)}</StatusPill>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-2">
+                    <StatusPill tone="neutral">{group.label}</StatusPill>
+                    <Link href={`/uploads?batchId=${batch.id}&batchIds=${serializeUploadBatchIds(uploadedBatchIds)}`} className="text-xs text-navy hover:underline">查看预览</Link>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
 
       {selectedBatch && preview ? (
         <Card className="mt-5">

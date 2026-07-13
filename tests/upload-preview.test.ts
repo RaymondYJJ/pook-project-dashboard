@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getUploadBusinessGroup, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 describe("upload preview grouping", () => {
   it("groups high-frequency upload files by business purpose", () => {
@@ -27,5 +27,19 @@ describe("upload preview grouping", () => {
         qualityIssueCount: 2
       })
     ).toEqual({ rowCount: 0, qualityIssueCount: 2, statusText: "需复核" });
+  });
+
+  it("serializes upload batch ids and selects confirmable parsed batches", () => {
+    expect(parseUploadBatchIds(serializeUploadBatchIds(["a", " b ", "", "a"]))).toEqual(["a", "b"]);
+    expect(parseUploadBatchIds(["a,b", "c"])).toEqual(["a", "b", "c"]);
+
+    expect(
+      getConfirmableUploadBatchIds([
+        { id: "finance-1", status: "parsed", reportType: "finance" },
+        { id: "external-1", status: "parsed", reportType: null },
+        { id: "failed-1", status: "failed", reportType: "sales" },
+        { id: "sales-1", status: "parsed", reportType: "sales" }
+      ])
+    ).toEqual(["finance-1", "sales-1"]);
   });
 });

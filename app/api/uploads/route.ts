@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { ProjectCode } from "@prisma/client";
 import { getSession } from "@/lib/auth/session";
 import { createAutoUploadPreview } from "@/lib/data/importer";
+import { serializeUploadBatchIds } from "@/lib/uploads/preview";
 
 export const runtime = "nodejs";
 
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
 
   const params = new URLSearchParams();
   if (succeeded.length) params.set("batchId", succeeded[0]);
+  if (succeeded.length) params.set("batchIds", serializeUploadBatchIds(succeeded));
   params.set("uploaded", String(succeeded.length));
   if (failed.length) params.set("failed", String(failed.length));
   return NextResponse.redirect(new URL(`/uploads?${params.toString()}`, request.url), 303);

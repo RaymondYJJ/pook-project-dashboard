@@ -12,6 +12,12 @@ export type UploadPreviewLike = {
   qualityIssueCount?: number | null;
 };
 
+export type UploadBatchLike = {
+  id: string;
+  status?: string | null;
+  reportType?: string | null;
+};
+
 const groups: Record<UploadBusinessGroupKey, UploadBusinessGroup> = {
   finance: {
     key: "finance",
@@ -66,4 +72,17 @@ export function summarizeUploadPreview(preview?: UploadPreviewLike | null) {
   const qualityIssueCount = Number(preview?.qualityIssueCount ?? 0);
   const statusText = rowCount > 0 && qualityIssueCount === 0 ? "可入库" : "需复核";
   return { rowCount, qualityIssueCount, statusText };
+}
+
+export function serializeUploadBatchIds(batchIds: string[]) {
+  return Array.from(new Set(batchIds.map((id) => id.trim()).filter(Boolean))).join(",");
+}
+
+export function parseUploadBatchIds(value?: string | string[] | null) {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return serializeUploadBatchIds(values.flatMap((item) => item.split(","))).split(",").filter(Boolean);
+}
+
+export function getConfirmableUploadBatchIds(batches: UploadBatchLike[]) {
+  return batches.filter((batch) => batch.status === "parsed" && Boolean(batch.reportType)).map((batch) => batch.id);
 }
