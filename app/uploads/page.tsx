@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Shell, PageHeader, Card, StatusPill } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
+import { getUploadBusinessGroup, getUploadBusinessGroups, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 type UploadsPageProps = {
   searchParams?: {
@@ -56,11 +57,26 @@ async function getSelectedBatch(batchId?: string) {
 export default async function UploadsPage({ searchParams }: UploadsPageProps) {
   const [files, selectedBatch] = await Promise.all([getUploads(), getSelectedBatch(searchParams?.batchId)]);
   const preview = selectedBatch?.preview as Record<string, unknown> | null;
+  const selectedSourceFile = selectedBatch?.sourceFiles[0];
+  const selectedReportType = String(selectedBatch?.reportType ?? preview?.reportType ?? "");
+  const selectedGroup = selectedBatch && preview ? getUploadBusinessGroup(selectedReportType, selectedSourceFile?.originalName ?? String(preview.fileName ?? "")) : null;
   const rowCounts = (preview?.rowCounts ?? {}) as Record<string, number>;
   const anomalyCounts = (preview?.anomalyCounts ?? {}) as Record<string, number>;
   const anomalyFlags = (preview?.anomalyFlags ?? {}) as Record<string, boolean>;
   const fields = ((preview?.fields ?? []) as string[]).slice(0, 30);
   const sheets = ((preview?.sheets ?? []) as string[]).slice(0, 20);
+  const selectedSummary = summarizeUploadPreview(preview ? { rowCounts, qualityIssueCount: Number(preview.qualityIssueCount ?? 0) } : null);
+  const groupedFiles = getUploadBusinessGroups()
+    .map((group) => ({
+      group,
+      batches: files.filter((batch) => {
+        const sourceFile = batch.sourceFiles[0];
+        const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+        const reportType = String(batch.reportType ?? parseSummary?.reportType ?? "");
+        return getUploadBusinessGroup(reportType, sourceFile?.originalName ?? "").key === group.key;
+      })
+    }))
+    .filter((item) => item.batches.length > 0);
 
   return (
     <Shell>
@@ -97,8 +113,13 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             <div>
               <h2 className="text-base font-semibold text-ink">解析预览</h2>
               <p className="mt-1 text-sm text-slate-500">
-                {selectedBatch.sourceFiles[0]?.originalName} · {projectLabels[selectedBatch.project?.code ?? ""] ?? "-"} · {reportTypeLabels[String(selectedBatch.reportType ?? preview.reportType)] ?? "自动识别待确认"} · v{selectedBatch.version}
+                {selectedSourceFile?.originalName} · {projectLabels[selectedBatch.project?.code ?? ""] ?? "-"} · {reportTypeLabels[String(selectedBatch.reportType ?? preview.reportType)] ?? "自动识别待确认"} · v{selectedBatch.version}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {selectedGroup ? <StatusPill tone="neutral">{selectedGroup.label}</StatusPill> : null}
+                <StatusPill tone={selectedSummary.qualityIssueCount ? "orange" : "green"}>{selectedSummary.statusText}</StatusPill>
+                <span className="text-xs text-slate-500">{selectedSummary.rowCount.toLocaleString("zh-CN")} 行可识别数据</span>
+              </div>
             </div>
             <div className="flex gap-2">
               {selectedBatch.status === "parsed" && selectedBatch.reportType ? (
@@ -122,6 +143,13 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             <Metric label="识别 sheet" value={sheets.length.toString()} />
             <Metric label="字段数量" value={fields.length.toString()} />
           </div>
+
+          {selectedGroup ? (
+            <div className="mt-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="text-sm font-semibold text-ink">自动归档：{selectedGroup.label}</div>
+              <p className="mt-1 text-xs leading-5 text-slate-500">{selectedGroup.description}。确认入库后，看板会按该类型读取最新确认版本。</p>
+            </div>
+          ) : null}
 
           <div className="mt-5 grid gap-5 lg:grid-cols-2">
             <PreviewBlock title="识别到的 sheet" items={sheets} />
@@ -149,21 +177,49 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
       ) : null}
 
       <Card className="mt-5">
-        <h2 className="mb-4 text-base font-semibold text-ink">上传版本</h2>
+        <div className="mb-4 flex flex-col justify-between gap-2 md:flex-row md:items-end">
+          <div>
+            <h2 className="text-base font-semibold text-ink">上传版本</h2>
+            <p className="mt-1 text-xs text-slate-500">按资金财务、经营销售、推广投放、库存采购和资料留存自动分组。</p>
+          </div>
+          {files.length ? <span className="text-xs text-slate-500">最近 {files.length} 个上传版本</span> : null}
+        </div>
+        {groupedFiles.length ? (
+          <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            {groupedFiles.map(({ group, batches }) => {
+              const rowCount = batches.reduce((sum, batch) => {
+                const sourceFile = batch.sourceFiles[0];
+                const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+                return sum + summarizeUploadPreview(parseSummary as { rowCounts?: Record<string, number>; qualityIssueCount?: number } | null).rowCount;
+              }, 0);
+              return (
+                <div key={group.key} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                  <div className="text-sm font-semibold text-ink">{group.label}</div>
+                  <div className="mt-1 text-xs leading-5 text-slate-500">{group.description}</div>
+                  <div className="mt-3 text-xs text-slate-600">{batches.length} 个文件 · {rowCount.toLocaleString("zh-CN")} 行</div>
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="text-slate-500">
-              <tr><th className="py-2">文件</th><th>项目</th><th>类型</th><th>日期/月</th><th>版本</th><th>状态</th><th>质量</th><th>操作</th></tr>
+              <tr><th className="py-2">文件</th><th>业务分组</th><th>项目</th><th>类型</th><th>日期/月</th><th>版本</th><th>状态</th><th>质量</th><th>操作</th></tr>
             </thead>
             <tbody>
               {files.map((batch) => {
                 const sourceFile = batch.sourceFiles[0];
-                const qualityCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number((sourceFile?.parseSummary as Record<string, unknown> | null)?.qualityIssueCount ?? 0);
+                const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+                const reportType = String(batch.reportType ?? parseSummary?.reportType ?? "");
+                const group = getUploadBusinessGroup(reportType, sourceFile?.originalName ?? "");
+                const qualityCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number(parseSummary?.qualityIssueCount ?? 0);
                 return (
                   <tr key={batch.id} className="border-t">
                     <td className="max-w-64 truncate py-3">{sourceFile?.originalName ?? "-"}</td>
+                    <td><StatusPill tone="neutral">{group.label}</StatusPill></td>
                     <td>{batch.project?.name ?? "-"}</td>
-                    <td>{reportTypeLabels[String(batch.reportType ?? (sourceFile?.parseSummary as Record<string, unknown> | null)?.reportType)] ?? "资料留存"}</td>
+                    <td>{reportTypeLabels[reportType] ?? "资料留存"}</td>
                     <td>{formatDate(batch.reportType === "finance" || batch.reportType === "management" ? batch.reportMonth : batch.reportDate)}</td>
                     <td>v{batch.version}</td>
                     <td><StatusPill tone={batch.activeAt ? "green" : batch.status === "failed" ? "red" : "neutral"}>{batch.activeAt ? "当前版本" : statusLabel(batch.status)}</StatusPill></td>
@@ -174,7 +230,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                   </tr>
                 );
               })}
-              {!files.length ? <tr><td className="py-6 text-slate-500" colSpan={8}>暂无上传记录，或数据库尚未连接。</td></tr> : null}
+              {!files.length ? <tr><td className="py-6 text-slate-500" colSpan={9}>暂无上传记录，或数据库尚未连接。</td></tr> : null}
             </tbody>
           </table>
         </div>

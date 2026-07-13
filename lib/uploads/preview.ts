@@ -1,0 +1,69 @@
+export type UploadBusinessGroupKey = "finance" | "operations" | "marketing" | "inventory" | "reference";
+
+export type UploadBusinessGroup = {
+  key: UploadBusinessGroupKey;
+  label: string;
+  description: string;
+  order: number;
+};
+
+export type UploadPreviewLike = {
+  rowCounts?: Record<string, number>;
+  qualityIssueCount?: number | null;
+};
+
+const groups: Record<UploadBusinessGroupKey, UploadBusinessGroup> = {
+  finance: {
+    key: "finance",
+    label: "资金财务",
+    description: "财报、资金收支、现金流、应收应付",
+    order: 1
+  },
+  operations: {
+    key: "operations",
+    label: "经营销售",
+    description: "经营日报、管报、运营日报、客服日报",
+    order: 2
+  },
+  marketing: {
+    key: "marketing",
+    label: "推广投放",
+    description: "天猫、京东、抖音、小红书等投放日报",
+    order: 3
+  },
+  inventory: {
+    key: "inventory",
+    label: "库存采购",
+    description: "商品日报、库存周转、采购台账、未提货",
+    order: 4
+  },
+  reference: {
+    key: "reference",
+    label: "资料留存",
+    description: "HTML 看板、飞书快捷链接、解析失败文件",
+    order: 5
+  }
+};
+
+export function getUploadBusinessGroup(reportType?: string | null, fileName = ""): UploadBusinessGroup {
+  if (reportType === "finance") return groups.finance;
+  if (reportType === "management" || reportType === "sales") return groups.operations;
+  if (reportType === "promotion") return groups.marketing;
+  if (reportType === "inventory" || reportType === "purchase") return groups.inventory;
+  if (/资金|财报|现金|应收|应付/.test(fileName)) return groups.finance;
+  if (/经营|管报|销售|运营|客服|店铺/.test(fileName)) return groups.operations;
+  if (/推广|投放|ROI|roi/.test(fileName)) return groups.marketing;
+  if (/商品|库存|采购|未提货|仓/.test(fileName)) return groups.inventory;
+  return groups.reference;
+}
+
+export function getUploadBusinessGroups() {
+  return Object.values(groups).sort((a, b) => a.order - b.order);
+}
+
+export function summarizeUploadPreview(preview?: UploadPreviewLike | null) {
+  const rowCount = Object.values(preview?.rowCounts ?? {}).reduce((sum, item) => sum + (Number(item) || 0), 0);
+  const qualityIssueCount = Number(preview?.qualityIssueCount ?? 0);
+  const statusText = rowCount > 0 && qualityIssueCount === 0 ? "可入库" : "需复核";
+  return { rowCount, qualityIssueCount, statusText };
+}
