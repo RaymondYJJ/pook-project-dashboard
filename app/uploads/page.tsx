@@ -15,6 +15,7 @@ type UploadsPageProps = {
     project?: string;
     group?: string;
     status?: string;
+    quality?: string;
     q?: string;
   };
 };
@@ -78,6 +79,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
   const historyRows = files.map((batch) => {
     const sourceFile = batch.sourceFiles[0];
     const parseSummary = sourceFile?.parseSummary as Record<string, unknown> | null;
+    const qualityIssueCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number(parseSummary?.qualityIssueCount ?? 0);
     return {
       id: batch.id,
       batch,
@@ -87,13 +89,15 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
       projectCode: batch.project?.code ?? null,
       fileName: sourceFile?.originalName ?? "",
       status: batch.status,
-      active: Boolean(batch.activeAt)
+      active: Boolean(batch.activeAt),
+      qualityIssueCount
     };
   });
   const filteredRows = filterUploadBatches(historyRows, {
     projectCode: searchParams?.project,
     group: searchParams?.group,
     status: searchParams?.status,
+    quality: searchParams?.quality,
     query: searchParams?.q
   });
   const preview = selectedBatch?.preview as Record<string, unknown> | null;
@@ -267,7 +271,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
           </div>
           {files.length ? <span className="text-xs text-slate-500">显示 {filteredRows.length} / 最近 {files.length} 个上传版本</span> : null}
         </div>
-        <form action="/uploads" className="mb-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_1.5fr_auto_auto] md:items-end">
+        <form action="/uploads" className="mb-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1.5fr_auto_auto] md:items-end">
           <label className="grid gap-1 text-xs font-medium text-slate-600">
             项目
             <select name="project" defaultValue={searchParams?.project ?? "all"} className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
@@ -291,6 +295,14 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
               <option value="imported">已入库</option>
               <option value="active">当前版本</option>
               <option value="failed">失败</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-xs font-medium text-slate-600">
+            质量
+            <select name="quality" defaultValue={searchParams?.quality ?? "all"} className="rounded border border-slate-300 bg-white px-2 py-2 text-sm">
+              <option value="all">全部质量</option>
+              <option value="clean">无问题</option>
+              <option value="issues">有问题</option>
             </select>
           </label>
           <label className="grid gap-1 text-xs font-medium text-slate-600">

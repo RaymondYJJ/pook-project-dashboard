@@ -60,13 +60,15 @@ describe("upload preview grouping", () => {
 
   it("filters upload batches by project group status and keyword", () => {
     const batches = [
-      { id: "1", projectCode: "luxueya", reportType: "finance", status: "imported", active: true, fileName: "佰茶绿雪芽资金收支一览表2026年6月.xlsx" },
-      { id: "2", projectCode: "luxueya", reportType: "promotion", status: "parsed", active: false, fileName: "绿雪芽京东POP推广日报6.29.xlsx" },
-      { id: "3", projectCode: "taiyue", reportType: "sales", status: "failed", active: false, fileName: "太樾电商销售日报6.22.xlsx" }
+      { id: "1", projectCode: "luxueya", reportType: "finance", status: "imported", active: true, fileName: "佰茶绿雪芽资金收支一览表2026年6月.xlsx", qualityIssueCount: 0 },
+      { id: "2", projectCode: "luxueya", reportType: "promotion", status: "parsed", active: false, fileName: "绿雪芽京东POP推广日报6.29.xlsx", qualityIssueCount: 2 },
+      { id: "3", projectCode: "taiyue", reportType: "sales", status: "failed", active: false, fileName: "太樾电商销售日报6.22.xlsx", qualityIssueCount: 1 }
     ];
 
     expect(filterUploadBatches(batches, { projectCode: "luxueya", group: "marketing" }).map((batch) => batch.id)).toEqual(["2"]);
     expect(filterUploadBatches(batches, { status: "active" }).map((batch) => batch.id)).toEqual(["1"]);
     expect(filterUploadBatches(batches, { query: "销售" }).map((batch) => batch.id)).toEqual(["3"]);
+    expect(filterUploadBatches(batches, { quality: "clean" }).map((batch) => batch.id)).toEqual(["1"]);
+    expect(filterUploadBatches(batches, { quality: "issues" }).map((batch) => batch.id)).toEqual(["2", "3"]);
   });
 });

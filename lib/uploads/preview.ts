@@ -22,6 +22,7 @@ export type UploadFilterBatchLike = UploadBatchLike & {
   active?: boolean | null;
   fileName?: string | null;
   projectCode?: string | null;
+  qualityIssueCount?: number | null;
 };
 
 export type UploadFilters = {
@@ -29,6 +30,7 @@ export type UploadFilters = {
   group?: string | null;
   status?: string | null;
   query?: string | null;
+  quality?: string | null;
 };
 
 export type BatchConfirmFailure = {
@@ -125,12 +127,15 @@ export function filterUploadBatches<T extends UploadFilterBatchLike>(batches: T[
   const projectCode = cleanFilter(filters.projectCode);
   const group = cleanFilter(filters.group);
   const status = cleanFilter(filters.status);
+  const quality = cleanFilter(filters.quality);
   const query = cleanFilter(filters.query)?.toLowerCase();
   return batches.filter((batch) => {
     if (projectCode && batch.projectCode !== projectCode) return false;
     if (group && getUploadBusinessGroup(batch.reportType, batch.fileName ?? "").key !== group) return false;
     if (status === "active" && !batch.active) return false;
     if (status && status !== "active" && batch.status !== status) return false;
+    if (quality === "clean" && Number(batch.qualityIssueCount ?? 0) > 0) return false;
+    if (quality === "issues" && Number(batch.qualityIssueCount ?? 0) <= 0) return false;
     if (query && !(batch.fileName ?? "").toLowerCase().includes(query)) return false;
     return true;
   });
