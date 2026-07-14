@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell, PageHeader, Card, StatusPill } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
-import { filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 type UploadsPageProps = {
   searchParams?: {
@@ -337,6 +337,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
               {filteredRows.map(({ batch, sourceFile, parseSummary, reportType, fileName }) => {
                 const group = getUploadBusinessGroup(reportType, fileName);
                 const qualityCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number(parseSummary?.qualityIssueCount ?? 0);
+                const actionBatch = { id: batch.id, status: batch.status, reportType: batch.reportType, active: Boolean(batch.activeAt) };
                 return (
                   <tr key={batch.id} className="border-t">
                     <td className="max-w-64 truncate py-3">{sourceFile?.originalName ?? "-"}</td>
@@ -347,8 +348,20 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                     <td>v{batch.version}</td>
                     <td><StatusPill tone={batch.activeAt ? "green" : batch.status === "failed" ? "red" : "neutral"}>{batch.activeAt ? "当前版本" : statusLabel(batch.status)}</StatusPill></td>
                     <td><StatusPill tone={qualityCount ? "red" : "green"}>{qualityCount} 个问题</StatusPill></td>
-                    <td className="whitespace-nowrap">
+                    <td className="flex flex-wrap items-center gap-2 whitespace-nowrap py-3">
                       <Link href={`/uploads?batchId=${batch.id}`} className="text-navy hover:underline">查看</Link>
+                      {canConfirmUploadBatch(actionBatch) ? (
+                        <form action="/api/uploads/confirm" method="post">
+                          <input type="hidden" name="batchId" value={batch.id} />
+                          <button className="text-pine hover:underline">确认</button>
+                        </form>
+                      ) : null}
+                      {canRollbackUploadBatch(actionBatch) ? (
+                        <form action="/api/uploads/rollback" method="post">
+                          <input type="hidden" name="batchId" value={batch.id} />
+                          <button className="text-slate-700 hover:underline">回滚</button>
+                        </form>
+                      ) : null}
                     </td>
                   </tr>
                 );

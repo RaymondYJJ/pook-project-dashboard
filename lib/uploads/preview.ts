@@ -16,6 +16,7 @@ export type UploadBatchLike = {
   id: string;
   status?: string | null;
   reportType?: string | null;
+  active?: boolean | null;
 };
 
 export type UploadFilterBatchLike = UploadBatchLike & {
@@ -104,7 +105,15 @@ export function parseUploadBatchIds(value?: string | string[] | null) {
 }
 
 export function getConfirmableUploadBatchIds(batches: UploadBatchLike[]) {
-  return batches.filter((batch) => batch.status === "parsed" && Boolean(batch.reportType)).map((batch) => batch.id);
+  return batches.filter(canConfirmUploadBatch).map((batch) => batch.id);
+}
+
+export function canConfirmUploadBatch(batch: UploadBatchLike) {
+  return batch.status === "parsed" && Boolean(batch.reportType);
+}
+
+export function canRollbackUploadBatch(batch: UploadBatchLike) {
+  return batch.status === "imported" && !batch.active;
 }
 
 export function buildBatchConfirmRedirectParams(result: { imported: string[]; failed: BatchConfirmFailure[] }) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBatchConfirmRedirectParams, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { buildBatchConfirmRedirectParams, canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 describe("upload preview grouping", () => {
   it("groups high-frequency upload files by business purpose", () => {
@@ -41,6 +41,13 @@ describe("upload preview grouping", () => {
         { id: "sales-1", status: "parsed", reportType: "sales" }
       ])
     ).toEqual(["finance-1", "sales-1"]);
+  });
+
+  it("detects row-level upload actions", () => {
+    expect(canConfirmUploadBatch({ id: "1", status: "parsed", reportType: "finance" })).toBe(true);
+    expect(canConfirmUploadBatch({ id: "2", status: "parsed", reportType: null })).toBe(false);
+    expect(canRollbackUploadBatch({ id: "3", status: "imported", reportType: "sales", active: false })).toBe(true);
+    expect(canRollbackUploadBatch({ id: "4", status: "imported", reportType: "sales", active: true })).toBe(false);
   });
 
   it("builds partial batch confirm redirect params", () => {
