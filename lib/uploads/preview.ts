@@ -34,6 +34,11 @@ export type UploadFilters = {
   quality?: string | null;
 };
 
+export type UploadReturnExtras = {
+  batchId?: string | null;
+  batchIds?: string | null;
+};
+
 export type BatchConfirmFailure = {
   id: string;
   message: string;
@@ -153,4 +158,28 @@ export function filterUploadBatches<T extends UploadFilterBatchLike>(batches: T[
 function cleanFilter(value?: string | null) {
   const cleaned = String(value ?? "").trim();
   return cleaned && cleaned !== "all" ? cleaned : null;
+}
+
+export function buildUploadReturnTo(filters: UploadFilters, extras: UploadReturnExtras = {}) {
+  const params = new URLSearchParams();
+  const projectCode = cleanFilter(filters.projectCode);
+  const group = cleanFilter(filters.group);
+  const status = cleanFilter(filters.status);
+  const quality = cleanFilter(filters.quality);
+  const query = cleanFilter(filters.query);
+  if (projectCode) params.set("project", projectCode);
+  if (group) params.set("group", group);
+  if (status) params.set("status", status);
+  if (quality) params.set("quality", quality);
+  if (query) params.set("q", query);
+  if (extras.batchId) params.set("batchId", extras.batchId);
+  if (extras.batchIds) params.set("batchIds", extras.batchIds);
+  const queryString = params.toString();
+  return queryString ? `/uploads?${queryString}` : "/uploads";
+}
+
+export function appendUploadResultParams(returnTo: string, result: URLSearchParams) {
+  const url = new URL(returnTo.startsWith("/") ? `http://local${returnTo}` : "http://local/uploads");
+  result.forEach((value, key) => url.searchParams.set(key, value));
+  return `${url.pathname}?${url.searchParams.toString()}`;
 }

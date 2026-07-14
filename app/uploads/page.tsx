@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell, PageHeader, Card, StatusPill } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
-import { canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { buildUploadReturnTo, canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, getUploadBusinessGroups, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 type UploadsPageProps = {
   searchParams?: {
@@ -100,6 +100,13 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
     quality: searchParams?.quality,
     query: searchParams?.q
   });
+  const currentUploadReturnTo = buildUploadReturnTo({
+    projectCode: searchParams?.project,
+    group: searchParams?.group,
+    status: searchParams?.status,
+    quality: searchParams?.quality,
+    query: searchParams?.q
+  }, { batchIds: searchParams?.batchIds });
   const preview = selectedBatch?.preview as Record<string, unknown> | null;
   const selectedSourceFile = selectedBatch?.sourceFiles[0];
   const selectedReportType = String(selectedBatch?.reportType ?? preview?.reportType ?? "");
@@ -275,6 +282,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             {confirmableFilteredBatchIds.length ? (
               <form action="/api/uploads/confirm" method="post">
                 <input type="hidden" name="batchIds" value={serializeUploadBatchIds(confirmableFilteredBatchIds)} />
+                <input type="hidden" name="returnTo" value={currentUploadReturnTo} />
                 <button className="rounded bg-pine px-3 py-2 text-xs font-medium text-white">确认当前筛选 {confirmableFilteredBatchIds.length} 个</button>
               </form>
             ) : null}
@@ -347,6 +355,13 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                 const group = getUploadBusinessGroup(reportType, fileName);
                 const qualityCount = Array.isArray(sourceFile?.qualityIssues) ? sourceFile.qualityIssues.length : Number(parseSummary?.qualityIssueCount ?? 0);
                 const actionBatch = { id: batch.id, status: batch.status, reportType: batch.reportType, active: Boolean(batch.activeAt) };
+                const rowReturnTo = buildUploadReturnTo({
+                  projectCode: searchParams?.project,
+                  group: searchParams?.group,
+                  status: searchParams?.status,
+                  quality: searchParams?.quality,
+                  query: searchParams?.q
+                }, { batchId: batch.id, batchIds: searchParams?.batchIds });
                 return (
                   <tr key={batch.id} className="border-t">
                     <td className="max-w-64 truncate py-3">{sourceFile?.originalName ?? "-"}</td>
@@ -358,16 +373,18 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
                     <td><StatusPill tone={batch.activeAt ? "green" : batch.status === "failed" ? "red" : "neutral"}>{batch.activeAt ? "当前版本" : statusLabel(batch.status)}</StatusPill></td>
                     <td><StatusPill tone={qualityCount ? "red" : "green"}>{qualityCount} 个问题</StatusPill></td>
                     <td className="flex flex-wrap items-center gap-2 whitespace-nowrap py-3">
-                      <Link href={`/uploads?batchId=${batch.id}`} className="text-navy hover:underline">查看</Link>
+                      <Link href={rowReturnTo} className="text-navy hover:underline">查看</Link>
                       {canConfirmUploadBatch(actionBatch) ? (
                         <form action="/api/uploads/confirm" method="post">
                           <input type="hidden" name="batchId" value={batch.id} />
+                          <input type="hidden" name="returnTo" value={rowReturnTo} />
                           <button className="text-pine hover:underline">确认</button>
                         </form>
                       ) : null}
                       {canRollbackUploadBatch(actionBatch) ? (
                         <form action="/api/uploads/rollback" method="post">
                           <input type="hidden" name="batchId" value={batch.id} />
+                          <input type="hidden" name="returnTo" value={rowReturnTo} />
                           <button className="text-slate-700 hover:underline">回滚</button>
                         </form>
                       ) : null}

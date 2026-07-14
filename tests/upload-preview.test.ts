@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBatchConfirmRedirectParams, canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
+import { appendUploadResultParams, buildBatchConfirmRedirectParams, buildUploadReturnTo, canConfirmUploadBatch, canRollbackUploadBatch, filterUploadBatches, getConfirmableUploadBatchIds, getUploadBusinessGroup, parseUploadBatchIds, serializeUploadBatchIds, summarizeUploadPreview } from "@/lib/uploads/preview";
 
 describe("upload preview grouping", () => {
   it("groups high-frequency upload files by business purpose", () => {
@@ -63,6 +63,17 @@ describe("upload preview grouping", () => {
     expect(params.get("confirmed")).toBe("2");
     expect(params.get("failed")).toBe("1");
     expect(params.get("error")).toContain("promotion-1");
+  });
+
+  it("builds upload return links while preserving filters", () => {
+    expect(
+      buildUploadReturnTo(
+        { projectCode: "luxueya", group: "marketing", status: "parsed", quality: "issues", query: "京东" },
+        { batchId: "batch-1", batchIds: "batch-1,batch-2" }
+      )
+    ).toBe("/uploads?project=luxueya&group=marketing&status=parsed&quality=issues&q=%E4%BA%AC%E4%B8%9C&batchId=batch-1&batchIds=batch-1%2Cbatch-2");
+
+    expect(appendUploadResultParams("/uploads?project=luxueya", new URLSearchParams({ batchId: "batch-1", confirmed: "1" }))).toBe("/uploads?project=luxueya&batchId=batch-1&confirmed=1");
   });
 
   it("filters upload batches by project group status and keyword", () => {
