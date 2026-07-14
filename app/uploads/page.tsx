@@ -117,6 +117,7 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
     }))
     .filter((item) => item.rows.length > 0);
   const confirmableUploadedBatchIds = getConfirmableUploadBatchIds(uploadedBatches);
+  const confirmableFilteredBatchIds = getConfirmableUploadBatchIds(filteredRows);
 
   return (
     <Shell>
@@ -269,7 +270,15 @@ export default async function UploadsPage({ searchParams }: UploadsPageProps) {
             <h2 className="text-base font-semibold text-ink">上传版本</h2>
             <p className="mt-1 text-xs text-slate-500">按资金财务、经营销售、推广投放、库存采购和资料留存自动分组。</p>
           </div>
-          {files.length ? <span className="text-xs text-slate-500">显示 {filteredRows.length} / 最近 {files.length} 个上传版本</span> : null}
+          <div className="flex flex-wrap items-center gap-3">
+            {files.length ? <span className="text-xs text-slate-500">显示 {filteredRows.length} / 最近 {files.length} 个上传版本</span> : null}
+            {confirmableFilteredBatchIds.length ? (
+              <form action="/api/uploads/confirm" method="post">
+                <input type="hidden" name="batchIds" value={serializeUploadBatchIds(confirmableFilteredBatchIds)} />
+                <button className="rounded bg-pine px-3 py-2 text-xs font-medium text-white">确认当前筛选 {confirmableFilteredBatchIds.length} 个</button>
+              </form>
+            ) : null}
+          </div>
         </div>
         <form action="/uploads" className="mb-5 grid gap-3 rounded-lg border border-slate-200 bg-slate-50 p-3 md:grid-cols-[1fr_1fr_1fr_1fr_1.5fr_auto_auto] md:items-end">
           <label className="grid gap-1 text-xs font-medium text-slate-600">
