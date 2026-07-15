@@ -9,6 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "doctor": "tsx scripts/local-doctor.ts",
     "db:up": "docker compose up -d db",
     "db:down": "docker compose down",
     "setup:local": "node scripts/setup-local-db.mjs",

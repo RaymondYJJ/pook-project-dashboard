@@ -60,7 +60,25 @@ npm run setup:local
 - 首次运行时执行 `prisma/migrations/20260629000000_init/migration.sql`
 - 写入默认角色、项目、管理员和预警规则
 
-5. 启动开发服务器
+5. 运行本地体检
+
+```bash
+npm run doctor
+```
+
+这个命令会检查：
+
+- 是否在项目根目录
+- `.env` 和必要环境变量是否存在
+- Docker Desktop 是否可用
+- 本地 PostgreSQL 是否可连接
+- Prisma Client 是否生成
+- 默认管理员是否已初始化
+- `sample-files/` 是否有样本文件
+
+如果某项失败，终端会直接给出下一步处理建议。
+
+6. 启动开发服务器
 
 ```bash
 npm run dev
