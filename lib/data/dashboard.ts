@@ -1,5 +1,6 @@
 import type { AlertSeverity, Project, ProjectCode, ReportType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { chooseMonthSalesValue, utcMonthRange } from "@/lib/data/dashboard-calculations";
 import { fallbackProjects, type MetricDatum, type ProjectSummary } from "@/lib/data/fallback";
 
 type SourceMeta = {
@@ -81,10 +82,22 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
     select: { reportDate: true }
   });
 
-  const [todaySales, monthSales, completion, finance, inventory, alerts] = await Promise.all([
+  const salesMonthRange = latestSalesDate ? utcMonthRange(latestSalesDate.reportDate) : null;
+
+  const [todaySales, salesMonth, monthSales, completion, finance, inventory, alerts] = await Promise.all([
     latestSalesDate
       ? prisma.salesDailyRow.aggregate({
           where: { projectId: project.id, reportDate: latestSalesDate.reportDate, sourceFile: { isActiveVersion: true } },
+          _sum: { actualSales: true, paymentAmount: true }
+        })
+      : null,
+    salesMonthRange
+      ? prisma.salesDailyRow.aggregate({
+          where: {
+            projectId: project.id,
+            reportDate: { gte: salesMonthRange.start, lt: salesMonthRange.end },
+            sourceFile: { isActiveVersion: true }
+          },
           _sum: { actualSales: true, paymentAmount: true }
         })
       : null,
@@ -120,7 +133,14 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
       sourceDate: dateOnly(latestSalesDate?.reportDate) ?? salesMeta.sourceDate,
       updatedAt: salesMeta.updatedAt
     }),
-    monthSales: metric(monthSales._sum.gmv, managementMeta),
+    monthSales: metric(
+      chooseMonthSalesValue({
+        salesActualSales: salesMonth?._sum.actualSales,
+        salesPaymentAmount: salesMonth?._sum.paymentAmount,
+        managementGmv: monthSales._sum.gmv
+      }),
+      salesMonth ? salesMeta : managementMeta
+    ),
     completionRate: metric(completionRate, salesMeta),
     salesOutbound: metric(monthSales._sum.salesOutbound, managementMeta),
     projectProfit: metric(monthSales._sum.projectProfit, managementMeta),

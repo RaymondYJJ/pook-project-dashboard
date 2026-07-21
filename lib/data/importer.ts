@@ -7,6 +7,7 @@ import { parseSourceFile, type ExcelParserType, type ParsedFile } from "@/lib/pa
 import { alertReportDate, evaluateParsedFile } from "@/lib/alerts/engine";
 import { parseDateValue } from "@/lib/parsers/workbook";
 import { inferReportDateFromName, monthStart, todayUtcDate } from "@/lib/utils";
+import { buildActiveVersionWhere } from "@/lib/uploads/versioning";
 
 export type UploadPreview = {
   batchId?: string;
@@ -58,7 +59,7 @@ export async function createUploadPreview(input: {
   if (!project) throw new Error(`Project not seeded: ${input.projectCode}`);
 
   const reportMonth = monthStart(input.reportDate.getUTCFullYear(), input.reportDate.getUTCMonth() + 1);
-  const version = await nextVersion(project.id, input.reportType, input.reportDate, reportMonth);
+  const version = await nextVersion(project.id, input.reportType, input.reportDate, reportMonth, input.file.name);
   const parsed = await parseSourceFile(saved.storagePath, input.file.name, {
     projectCode: input.projectCode,
     parserType: input.reportType as ExcelParserType,
@@ -133,7 +134,7 @@ export async function createAutoUploadPreview(input: {
   const inferredType = toReportType(parsed.parserType);
   const reportDate = parsed.reportDate ?? inferReportDateFromName(input.file.name) ?? todayUtcDate();
   const reportMonth = parsed.reportMonth ?? monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
-  const version = inferredType ? await nextVersion(project.id, inferredType, reportDate, reportMonth) : 1;
+  const version = inferredType ? await nextVersion(project.id, inferredType, reportDate, reportMonth, input.file.name) : 1;
   const preview = buildUploadPreview(parsed, input.file.name, inferredType, version);
 
   const batch = await prisma.uploadBatch.create({
@@ -252,11 +253,13 @@ export async function confirmUploadBatch(batchId: string, userId?: string | null
     await clearImportedRows(tx, batch.id);
     await persistParsed(projectId, batch.id, sourceFile.id, parsed, tx);
     await tx.sourceFile.updateMany({
-      where: {
+      where: buildActiveVersionWhere({
         projectId,
         reportType,
-        ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
-      },
+        reportDate,
+        reportMonth,
+        originalName: sourceFile.originalName
+      }),
       data: { isActiveVersion: false }
     });
     const now = new Date();
@@ -299,11 +302,13 @@ export async function rollbackToUploadBatch(batchId: string, userId?: string | n
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await tx.sourceFile.updateMany({
-      where: {
+      where: buildActiveVersionWhere({
         projectId,
         reportType,
-        ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
-      },
+        reportDate,
+        reportMonth,
+        originalName: sourceFile.originalName
+      }),
       data: { isActiveVersion: false }
     });
     await tx.sourceFile.update({ where: { id: sourceFile.id }, data: { isActiveVersion: true } });
@@ -311,6 +316,7 @@ export async function rollbackToUploadBatch(batchId: string, userId?: string | n
       where: {
         projectId,
         reportType,
+        sourceFiles: { some: { originalName: sourceFile.originalName } },
         ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
       },
       data: { activeAt: null }
@@ -334,7 +340,7 @@ export async function parseAndImportFile(filePath: string, originalName: string,
     const project = await prisma.project.findUnique({ where: { code: parsed.projectCode } });
     if (!project) throw new Error(`Project not seeded: ${parsed.projectCode}`);
     const reportType = toReportType(parsed.parserType);
-    const version = reportType ? await nextVersion(project.id, reportType, parsed.reportDate, parsed.reportMonth) : 1;
+    const version = reportType ? await nextVersion(project.id, reportType, parsed.reportDate, parsed.reportMonth, originalName) : 1;
     const batch = await prisma.uploadBatch.create({
       data: {
         projectId: project.id,
@@ -367,11 +373,13 @@ export async function parseAndImportFile(filePath: string, originalName: string,
     await persistParsed(project.id, batch.id, sourceFile.id, parsed);
     if (reportType) {
       await prisma.sourceFile.updateMany({
-        where: {
+        where: buildActiveVersionWhere({
           projectId: project.id,
           reportType,
-          ...(usesMonth(reportType) ? { reportMonth: parsed.reportMonth } : { reportDate: parsed.reportDate })
-        },
+          reportDate: parsed.reportDate,
+          reportMonth: parsed.reportMonth,
+          originalName
+        }),
         data: { isActiveVersion: false }
       });
     }
@@ -458,13 +466,15 @@ async function clearImportedRows(tx: Prisma.TransactionClient, uploadBatchId: st
   await tx.financeSnapshot.deleteMany({ where: { uploadBatchId } });
 }
 
-async function nextVersion(projectId: string, reportType: ReportType, reportDate: Date, reportMonth: Date) {
+async function nextVersion(projectId: string, reportType: ReportType, reportDate: Date, reportMonth: Date, originalName: string) {
   const latest = await prisma.sourceFile.findFirst({
-    where: {
+    where: buildActiveVersionWhere({
       projectId,
       reportType,
-      ...(usesMonth(reportType) ? { reportMonth } : { reportDate })
-    },
+      reportDate,
+      reportMonth,
+      originalName
+    }),
     orderBy: { version: "desc" }
   });
   return (latest?.version ?? 0) + 1;
