@@ -1,6 +1,6 @@
 import type { AlertSeverity, Project, ProjectCode, ReportType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { chooseMonthSalesValue, utcMonthRange } from "@/lib/data/dashboard-calculations";
+import { chooseLatestMetricValue, chooseMonthSalesValue, utcMonthRange } from "@/lib/data/dashboard-calculations";
 import { fallbackProjects, type MetricDatum, type ProjectSummary } from "@/lib/data/fallback";
 
 type SourceMeta = {
@@ -77,7 +77,11 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
   ]);
 
   const latestSalesDate = await prisma.salesDailyRow.findFirst({
-    where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
+    where: {
+      projectId: project.id,
+      sourceFile: { isActiveVersion: true },
+      OR: [{ actualSales: { not: null } }, { paymentAmount: { not: null } }]
+    },
     orderBy: { reportDate: "desc" },
     select: { reportDate: true }
   });
@@ -109,9 +113,9 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
       _sum: { actualSales: true, paymentAmount: true, gmvTarget: true }
     }),
-    prisma.financeSnapshot.findFirst({
+    prisma.financeSnapshot.findMany({
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
-      orderBy: { reportMonth: "desc" }
+      orderBy: [{ reportMonth: "desc" }, { updatedAt: "desc" }]
     }),
     prisma.inventorySnapshot.findFirst({
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
@@ -139,14 +143,32 @@ async function buildProjectSummary(project: Project): Promise<ProjectSummary> {
         salesPaymentAmount: salesMonth?._sum.paymentAmount,
         managementGmv: monthSales._sum.gmv
       }),
-      salesMonth ? salesMeta : managementMeta
+      salesMonth ? { sourceDate: dateOnly(latestSalesDate?.reportDate), updatedAt: salesMeta.updatedAt } : managementMeta
     ),
     completionRate: metric(completionRate, salesMeta),
     salesOutbound: metric(monthSales._sum.salesOutbound, managementMeta),
     projectProfit: metric(monthSales._sum.projectProfit, managementMeta),
-    cashBalance: metric(finance?.endingCash ?? finance?.monetaryFunds, financeMeta),
-    receivables: metric(finance?.receivables, financeMeta),
-    payables: metric(finance?.payables, financeMeta),
+    cashBalance: chooseLatestMetricValue(
+      finance.map((row) => ({
+        value: row.endingCash ?? row.monetaryFunds,
+        sourceDate: dateOnly(row.reportMonth),
+        updatedAt: dateOnly(row.updatedAt)
+      }))
+    ),
+    receivables: chooseLatestMetricValue(
+      finance.map((row) => ({
+        value: row.receivables,
+        sourceDate: dateOnly(row.reportMonth),
+        updatedAt: dateOnly(row.updatedAt)
+      }))
+    ),
+    payables: chooseLatestMetricValue(
+      finance.map((row) => ({
+        value: row.payables,
+        sourceDate: dateOnly(row.reportMonth),
+        updatedAt: dateOnly(row.updatedAt)
+      }))
+    ),
     inventoryAmount: metric(inventory?.inventoryAmount, inventoryMeta),
     turnoverDays: metric(inventory?.turnoverDays, inventoryMeta),
     alertCount: metric(alerts, { sourceDate: dateOnly(new Date()), updatedAt: dateOnly(new Date()) })
@@ -181,7 +203,7 @@ export async function getProjectDashboard(projectId: string): Promise<ProjectDas
     };
   }
 
-  const [summary, monthly, channels, profit, inventoryRows, cashflow, alerts, sourceFiles] = await Promise.all([
+  const [summary, monthly, salesRows, profit, inventoryRows, cashflow, alerts, sourceFiles] = await Promise.all([
     buildProjectSummary(project),
     prisma.managementReportRow.groupBy({
       by: ["reportMonth"],
@@ -189,10 +211,9 @@ export async function getProjectDashboard(projectId: string): Promise<ProjectDas
       _sum: { gmv: true, projectProfit: true },
       orderBy: { reportMonth: "asc" }
     }),
-    prisma.managementReportRow.groupBy({
-      by: ["channel"],
+    prisma.salesDailyRow.findMany({
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
-      _sum: { gmv: true }
+      select: { sourceFileId: true, reportDate: true, channel: true, store: true, actualSales: true, paymentAmount: true }
     }),
     prisma.managementReportRow.aggregate({
       where: { projectId: project.id, sourceFile: { isActiveVersion: true } },
@@ -228,15 +249,31 @@ export async function getProjectDashboard(projectId: string): Promise<ProjectDas
   }).length;
   const noSales = inventoryRows.filter((row) => (toNumber(row.sales30d) ?? 0) === 0 && (toNumber(row.inventoryAmount) ?? 0) > 0).length;
 
+  const salesByMonth = new Map<string, number>();
+  const channelMap = new Map<string, number>();
+  const filesWithActualSales = new Set(salesRows.filter((row) => toNumber(row.actualSales) !== null).map((row) => row.sourceFileId));
+  for (const row of salesRows) {
+    const value = filesWithActualSales.has(row.sourceFileId) ? toNumber(row.actualSales) : toNumber(row.paymentAmount);
+    if (value === null || value === 0) continue;
+    const month = monthLabel(row.reportDate);
+    salesByMonth.set(month, (salesByMonth.get(month) ?? 0) + value);
+    const channel = row.channel || row.store || "未分渠道";
+    channelMap.set(channel, (channelMap.get(channel) ?? 0) + value);
+  }
+  const monthlyMap = new Map<string, { name: string; sales: number | null; profit: number | null }>();
+  for (const [name, sales] of salesByMonth) monthlyMap.set(name, { name, sales, profit: null });
+  for (const row of monthly) {
+    const name = monthLabel(row.reportMonth);
+    const current = monthlyMap.get(name) ?? { name, sales: null, profit: null };
+    current.profit = sumNumber(row._sum.projectProfit);
+    monthlyMap.set(name, current);
+  }
+
   return {
     project: summary,
-    monthlyTrend: monthly.map((row) => ({
-      name: monthLabel(row.reportMonth),
-      sales: sumNumber(row._sum.gmv),
-      profit: sumNumber(row._sum.projectProfit)
-    })),
-    channelSales: channels
-      .map((row) => ({ name: row.channel || "未分渠道", value: toNumber(row._sum.gmv) ?? 0 }))
+    monthlyTrend: Array.from(monthlyMap.values()),
+    channelSales: Array.from(channelMap.entries())
+      .map(([name, value]) => ({ name, value }))
       .filter((row) => row.value !== 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 8),

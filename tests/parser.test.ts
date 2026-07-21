@@ -27,6 +27,15 @@ describe("sample parsers", () => {
     expect(Number(result.summary.management && (result.summary.management as { rows: number }).rows)).toBeGreaterThan(0);
   });
 
+  it("normalizes Taiyue management report values from ten-thousand yuan units", async () => {
+    const result = await parseSourceFile(path.join(samples, "太樾1-5管报.xlsx"), "太樾1-5管报.xlsx");
+    const gmv = Number((result.summary.management as { gmv: number }).gmv);
+    const projectProfit = Number((result.summary.management as { projectProfit: number }).projectProfit);
+
+    expect(gmv).toBeGreaterThan(600000);
+    expect(projectProfit).toBeLessThan(-700000);
+  });
+
   it("marks promotion formula errors as quality issues", async () => {
     const result = await parseSourceFile(path.join(samples, "太樾推广日报0622.xlsx"), "太樾推广日报0622.xlsx");
     expect(result.parserType).toBe("promotion");
@@ -107,6 +116,26 @@ describe("sample parsers", () => {
     expect(parsed.salesDailyRows[0].paymentAmount).toBe(58000);
     expect(parsed.salesDailyRows[0].paidBuyers).toBe(320);
     expect(parsed.salesDailyRows[0].conversionRate).toBeCloseTo(0.2667, 4);
+  });
+
+  it("skips sales rows that only contain product labels without date or metrics", () => {
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      workbook,
+      XLSX.utils.aoa_to_sheet([
+        ["商品名称", "商品浏览量", "支付金额"],
+        ["平均停留时长", "", ""],
+        ["金六条", "", ""],
+        ["银六条", "120", ""]
+      ]),
+      "店铺日报"
+    );
+
+    const parsed = parseSales(workbook, emptyParsedFile({ parserType: "sales", projectCode: "taiyue", reportMonth: new Date("2026-06-01"), reportDate: new Date("2026-06-30") }));
+
+    expect(parsed.salesDailyRows).toHaveLength(1);
+    expect(parsed.salesDailyRows[0].productName).toBe("银六条");
+    expect(parsed.salesDailyRows[0].pageViews).toBe(120);
   });
 
   it("parses promotion daily aliases from channel sheets", () => {

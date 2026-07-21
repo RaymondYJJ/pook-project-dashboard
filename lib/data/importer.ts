@@ -133,7 +133,8 @@ export async function createAutoUploadPreview(input: {
   }
   const inferredType = toReportType(parsed.parserType);
   const reportDate = parsed.reportDate ?? inferReportDateFromName(input.file.name) ?? todayUtcDate();
-  const reportMonth = parsed.reportMonth ?? monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  const reportMonth = reportMonthForType(inferredType, reportDate, parsed.reportMonth);
+  parsed.reportMonth = reportMonth;
   const version = inferredType ? await nextVersion(project.id, inferredType, reportDate, reportMonth, input.file.name) : 1;
   const preview = buildUploadPreview(parsed, input.file.name, inferredType, version);
 
@@ -240,7 +241,7 @@ export async function confirmUploadBatch(batchId: string, userId?: string | null
   const projectId = batch.projectId;
   const reportType = batch.reportType;
   const reportDate = batch.reportDate;
-  const reportMonth = batch.reportMonth;
+  const reportMonth = reportMonthForType(reportType, reportDate, batch.reportMonth);
 
   const parsed = await parseSourceFile(sourceFile.storagePath, sourceFile.originalName, {
     projectCode: batch.project?.code ?? "luxueya",
@@ -268,13 +269,14 @@ export async function confirmUploadBatch(batchId: string, userId?: string | null
       data: {
         isActiveVersion: true,
         confirmedAt: now,
+        reportMonth,
         parseSummary: toJson(buildUploadPreview(parsed, sourceFile.originalName, reportType, sourceFile.version)),
         qualityIssues: toJson(parsed.qualityIssues)
       }
     });
     await tx.uploadBatch.update({
       where: { id: batch.id },
-      data: { status: "imported", confirmedAt: now, activeAt: now, preview: toJson(buildUploadPreview(parsed, sourceFile.originalName, reportType, sourceFile.version)) }
+      data: { status: "imported", reportMonth, confirmedAt: now, activeAt: now, preview: toJson(buildUploadPreview(parsed, sourceFile.originalName, reportType, sourceFile.version)) }
     });
     await tx.auditLog.create({
       data: {
@@ -298,7 +300,7 @@ export async function rollbackToUploadBatch(batchId: string, userId?: string | n
   const projectId = batch.projectId;
   const reportType = batch.reportType;
   const reportDate = batch.reportDate;
-  const reportMonth = batch.reportMonth;
+  const reportMonth = reportMonthForType(reportType, reportDate, batch.reportMonth);
   const now = new Date();
   await prisma.$transaction(async (tx) => {
     await tx.sourceFile.updateMany({
@@ -340,14 +342,16 @@ export async function parseAndImportFile(filePath: string, originalName: string,
     const project = await prisma.project.findUnique({ where: { code: parsed.projectCode } });
     if (!project) throw new Error(`Project not seeded: ${parsed.projectCode}`);
     const reportType = toReportType(parsed.parserType);
-    const version = reportType ? await nextVersion(project.id, reportType, parsed.reportDate, parsed.reportMonth, originalName) : 1;
+    const reportMonth = reportMonthForType(reportType, parsed.reportDate, parsed.reportMonth);
+    parsed.reportMonth = reportMonth;
+    const version = reportType ? await nextVersion(project.id, reportType, parsed.reportDate, reportMonth, originalName) : 1;
     const batch = await prisma.uploadBatch.create({
       data: {
         projectId: project.id,
         uploadedById: userId ?? undefined,
         reportType,
         reportDate: parsed.reportDate,
-        reportMonth: parsed.reportMonth,
+        reportMonth,
         version,
         status: "parsed",
         note: `Imported ${originalName}`,
@@ -364,7 +368,7 @@ export async function parseAndImportFile(filePath: string, originalName: string,
         parserType: parsed.parserType,
         reportType,
         reportDate: parsed.reportDate,
-        reportMonth: parsed.reportMonth,
+        reportMonth,
         version,
         parseSummary: toJson(parsed.summary),
         qualityIssues: toJson(parsed.qualityIssues)
@@ -377,7 +381,7 @@ export async function parseAndImportFile(filePath: string, originalName: string,
           projectId: project.id,
           reportType,
           reportDate: parsed.reportDate,
-          reportMonth: parsed.reportMonth,
+          reportMonth,
           originalName
         }),
         data: { isActiveVersion: false }
@@ -482,6 +486,11 @@ async function nextVersion(projectId: string, reportType: ReportType, reportDate
 
 function usesMonth(reportType: ReportType) {
   return reportType === "finance" || reportType === "management";
+}
+
+function reportMonthForType(reportType: ReportType | null, reportDate: Date, parsedReportMonth?: Date | null) {
+  if (reportType && usesMonth(reportType)) return parsedReportMonth ?? monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
+  return monthStart(reportDate.getUTCFullYear(), reportDate.getUTCMonth() + 1);
 }
 
 function toReportType(parserType: ParsedFile["parserType"]): ReportType | null {

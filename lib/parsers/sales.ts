@@ -37,7 +37,7 @@ function hasSalesSignal(row: Record<string, unknown>) {
     rowNumber(row, conversionAliases),
     rowNumber(row, averageOrderAliases)
   ];
-  return numericValues.some((value) => value !== null) || Boolean(rowValue(row, productAliases) || rowValue(row, skuAliases));
+  return numericValues.some((value) => value !== null) || Boolean(rowValue(row, dateAliases));
 }
 
 export function parseSales(workbook: XLSX.WorkBook, parsed: ParsedFile) {
